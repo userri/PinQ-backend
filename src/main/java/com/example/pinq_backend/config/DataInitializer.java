@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 멱등: 이미 데이터가 있으면 건너뜀.
  */
 @Component
-@Profile("!test")
+@Profile({"local", "h2", "dev"})
 @RequiredArgsConstructor
 @Slf4j
 public class DataInitializer implements ApplicationRunner {
