@@ -40,5 +40,5 @@ out/
 .env
 .env.*
 !.env.example
+application-local.properties
 docker-compose.override.yml
-src/main/resources/application-local.properties

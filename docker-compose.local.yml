@@ -4,9 +4,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-3306}
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: mysql-container
+      DB_PORT: 3306
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
