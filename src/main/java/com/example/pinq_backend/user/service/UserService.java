@@ -4,6 +4,7 @@ import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final SolvedHistoryRepository solvedHistoryRepository;
+    private final Clock clock;
 
     /**
      * 퀴즈 한 문제를 채점할 때마다 호출.
@@ -32,7 +34,7 @@ public class UserService {
     @Transactional
     public void recordAnswer(boolean isCorrect) {
         User user = findDemoUser();
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         // 스트릭 갱신 (오늘 이미 기록됐으면 내부에서 무시)
         user.recordSolvedOn(today);

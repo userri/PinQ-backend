@@ -4,6 +4,7 @@ import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +24,7 @@ public class UserStatsService {
 
     private final UserService userService;
     private final SolvedHistoryRepository solvedHistoryRepository;
+    private final Clock clock;
 
     public UserStatsResponse getStats() {
         User user = userService.findDemoUser();
@@ -38,7 +40,7 @@ public class UserStatsService {
         float correctRate = totalSolved > 0 ? (float) totalCorrect / totalSolved : 0f;
 
         // ── activityGrid (최근 56일) ──────────────────────────────
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate from  = today.minusDays(GRID_DAYS - 1);
 
         List<SolvedHistory> recent =

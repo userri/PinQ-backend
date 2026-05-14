@@ -3,11 +3,14 @@ package com.example.pinq_backend.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
+import com.example.pinq_backend.config.AppConfig;
 import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import java.lang.reflect.Field;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,11 +41,19 @@ class UserStatsServiceTest {
     @InjectMocks
     private UserStatsService userStatsService;
 
-    private User demoUser;
+    // Clock.fixed() 로 고정해 LocalDate.now(clock) 이 항상 TODAY 를 반환하도록 한다.
+    // LocalDate.now() 를 그대로 쓰면 실행 시점마다 결과가 달라지는 flaky test 가 된다.
     private static final LocalDate TODAY = LocalDate.of(2026, 5, 14);
+    private static final Clock FIXED_CLOCK =
+        Clock.fixed(TODAY.atStartOfDay(AppConfig.KST).toInstant(), AppConfig.KST);
+
+    private User demoUser;
 
     @BeforeEach
     void setUp() {
+        // Clock 필드는 @Mock 대상이 아니므로 reflection 으로 직접 주입한다.
+        setField(userStatsService, "clock", FIXED_CLOCK);
+
         demoUser = User.builder()
             .nickname("demo")
             .currentStreak(3)
@@ -68,8 +79,8 @@ class UserStatsServiceTest {
 
         UserStatsResponse result = userStatsService.getStats();
 
-        assertThat(result.totalSolved()).isEqualTo(12);           // 4+4+4
-        assertThat(result.correctRate()).isEqualTo(9f / 12f);     // 3+2+4=9
+        assertThat(result.totalSolved()).isEqualTo(12);
+        assertThat(result.correctRate()).isEqualTo(9f / 12f);
         assertThat(result.streak()).isEqualTo(3);
     }
 
@@ -90,8 +101,8 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("activityGrid 는 56개이고 index 0 이 55일 전, index 55 가 오늘이다")
     void getStats_activityGrid_sizeAndDirection() {
-        SolvedHistory todayHistory    = historyOf(TODAY, 1, 1);
-        SolvedHistory oldestHistory   = historyOf(TODAY.minusDays(55), 1, 0);
+        SolvedHistory todayHistory  = historyOf(TODAY, 1, 1);
+        SolvedHistory oldestHistory = historyOf(TODAY.minusDays(55), 1, 0);
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(solvedHistoryRepository.findByUserIdAndSolvedDateBetween(
@@ -109,7 +120,6 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("solved_count=0 인 날은 activityGrid 에서 false 다")
     void getStats_activityGrid_zeroSolvedCountIsFalse() {
-        // solved_count=0 인 행이 DB에 있더라도 활동한 날로 보지 않는다
         SolvedHistory emptyDay = historyOf(TODAY, 0, 0);
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of(emptyDay));
@@ -133,12 +143,17 @@ class UserStatsServiceTest {
     }
 
     private static void setId(Object entity, Long id) {
+        setField(entity, "id", id);
+    }
+
+    private static void setField(Object target, String fieldName, Object value) {
         try {
-            Field f = entity.getClass().getDeclaredField("id");
+            Field f = target.getClass().getDeclaredField(fieldName);
             f.setAccessible(true);
-            f.set(entity, id);
+            f.set(target, value);
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("id 세팅 실패: " + entity.getClass(), e);
+            throw new IllegalStateException(
+                "필드 세팅 실패: " + target.getClass().getSimpleName() + "#" + fieldName, e);
         }
     }
 }
