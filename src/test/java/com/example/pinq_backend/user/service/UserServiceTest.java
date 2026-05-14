@@ -27,10 +27,24 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /**
  * UserService 핵심 동작 검증.
  *
- *  1. demo 유저가 없으면 새로 생성해 반환한다 (findOrCreate)
+ * [findDemoUser]
+ *  1. demo 유저가 없으면 새로 생성해 반환한다
  *  2. demo 유저가 이미 있으면 저장 없이 반환한다
- *  3. recordAnswer — 오늘 첫 풀이: SolvedHistory 신규 생성 + 통계 기록
- *  4. recordAnswer — 오늘 두 번째 풀이: 기존 SolvedHistory 에 누적
+ *
+ * [recordAnswer — SolvedHistory]
+ *  3. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct+1 (정답)
+ *  4. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct 불변 (오답)
+ *  5. 오늘 추가 풀이: 기존 SolvedHistory 누적 저장 호출 없음, solved+1 / correct+1 (정답)
+ *  6. 오늘 추가 풀이: 기존 SolvedHistory 누적, solved+1 / correct 불변 (오답)
+ *
+ * [recordAnswer — streak]
+ *  7. 풀이 이력 전무(lastSolvedDate=null): streak 1로 시작
+ *  8. 어제 풀었으면: streak 연속 증가
+ *  9. 이틀 전에 마지막으로 풀었으면: streak 1로 리셋
+ * 10. 오늘 이미 풀었으면: streak 변화 없음
+ *
+ * [recordAnswer — demo 유저 자동 생성]
+ * 11. demo 유저가 없을 때 recordAnswer: 유저 생성 후 streak=1, SolvedHistory 생성
  */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -45,6 +59,9 @@ class UserServiceTest {
     private UserService userService;
 
     private static final LocalDate TODAY = LocalDate.of(2026, 5, 14);
+    private static final LocalDate YESTERDAY = TODAY.minusDays(1);
+    private static final LocalDate TWO_DAYS_AGO = TODAY.minusDays(2);
+
     private static final Clock FIXED_CLOCK =
         Clock.fixed(TODAY.atStartOfDay(AppConfig.KST).toInstant(), AppConfig.KST);
 
@@ -58,7 +75,7 @@ class UserServiceTest {
     @Test
     @DisplayName("demo 유저가 없으면 새로 생성하여 반환한다")
     void findDemoUser_createsWhenAbsent() {
-        User saved = demoUser(1L, 0);
+        User saved = demoUser(1L, 0, null);
         given(userRepository.findByNickname(UserService.DEMO_NICKNAME)).willReturn(Optional.empty());
         given(userRepository.save(any(User.class))).willReturn(saved);
 
@@ -74,7 +91,7 @@ class UserServiceTest {
     @Test
     @DisplayName("demo 유저가 이미 있으면 저장 없이 그대로 반환한다")
     void findDemoUser_returnsExistingWithoutSave() {
-        User existing = demoUser(1L, 3);
+        User existing = demoUser(1L, 3, YESTERDAY);
         given(userRepository.findByNickname(UserService.DEMO_NICKNAME))
             .willReturn(Optional.of(existing));
 
@@ -84,56 +101,189 @@ class UserServiceTest {
         verify(userRepository, never()).save(any());
     }
 
-    // ── recordAnswer ──────────────────────────────────────────────────────────
+    // ── recordAnswer — SolvedHistory ─────────────────────────────────────────
 
     @Test
-    @DisplayName("오늘 첫 풀이이면 SolvedHistory 를 새로 생성하고 통계를 기록한다")
-    void recordAnswer_firstAnswerToday_createsSolvedHistory() {
-        User user = demoUser(1L, 0);
-        given(userRepository.findByNickname(UserService.DEMO_NICKNAME))
-            .willReturn(Optional.of(user));
-
-        SolvedHistory newHistory = SolvedHistory.create(user, TODAY);
-        given(solvedHistoryRepository.findByUserIdAndSolvedDate(1L, TODAY))
-            .willReturn(Optional.empty());
-        given(solvedHistoryRepository.save(any(SolvedHistory.class))).willReturn(newHistory);
+    @DisplayName("오늘 첫 정답: SolvedHistory 를 새로 생성하고 solved+1 / correct+1")
+    void recordAnswer_firstAnswerToday_correct() {
+        User user = demoUser(1L, 0, null);
+        stubExistingUser(user);
+        SolvedHistory created = stubNoHistoryToday(user);
 
         userService.recordAnswer(true);
 
+        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        assertThat(created.getSolvedCount()).isEqualTo(1);
+        assertThat(created.getCorrectCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("오늘 첫 오답: SolvedHistory 를 새로 생성하고 solved+1 / correct 는 0 유지")
+    void recordAnswer_firstAnswerToday_wrong() {
+        User user = demoUser(1L, 0, null);
+        stubExistingUser(user);
+        SolvedHistory created = stubNoHistoryToday(user);
+
+        userService.recordAnswer(false);
+
+        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        assertThat(created.getSolvedCount()).isEqualTo(1);
+        assertThat(created.getCorrectCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("오늘 추가 정답: 기존 SolvedHistory 에 solved+1 / correct+1 누적, save 미호출")
+    void recordAnswer_additionalAnswerToday_correct() {
+        User user = demoUser(1L, 1, TODAY);
+        stubExistingUser(user);
+        SolvedHistory existing = existingHistoryToday(user, 2, 1); // 기존: 2풀이 1정답
+
+        userService.recordAnswer(true);
+
+        verify(solvedHistoryRepository, never()).save(any());
+        assertThat(existing.getSolvedCount()).isEqualTo(3);
+        assertThat(existing.getCorrectCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("오늘 추가 오답: 기존 SolvedHistory 에 solved+1 / correct 불변 누적, save 미호출")
+    void recordAnswer_additionalAnswerToday_wrong() {
+        User user = demoUser(1L, 1, TODAY);
+        stubExistingUser(user);
+        SolvedHistory existing = existingHistoryToday(user, 2, 2); // 기존: 2풀이 2정답
+
+        userService.recordAnswer(false);
+
+        verify(solvedHistoryRepository, never()).save(any());
+        assertThat(existing.getSolvedCount()).isEqualTo(3);
+        assertThat(existing.getCorrectCount()).isEqualTo(2); // 오답이므로 correct 불변
+    }
+
+    // ── recordAnswer — streak ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("풀이 이력이 전혀 없으면 streak 가 1 로 시작된다")
+    void recordAnswer_noHistory_streakStartsAtOne() {
+        User user = demoUser(1L, 0, null); // lastSolvedDate=null
+        stubExistingUser(user);
+        stubNoHistoryToday(user);
+
+        userService.recordAnswer(true);
+
+        assertThat(user.getCurrentStreak()).isEqualTo(1);
+        assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
+    }
+
+    @Test
+    @DisplayName("어제 풀었으면 streak 가 연속으로 증가한다")
+    void recordAnswer_solvedYesterday_streakIncreases() {
+        User user = demoUser(1L, 3, YESTERDAY);
+        stubExistingUser(user);
+        stubNoHistoryToday(user);
+
+        userService.recordAnswer(true);
+
+        assertThat(user.getCurrentStreak()).isEqualTo(4);
+        assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
+    }
+
+    @Test
+    @DisplayName("마지막 풀이가 이틀 전이면 streak 가 1 로 리셋된다")
+    void recordAnswer_solvedTwoDaysAgo_streakResets() {
+        User user = demoUser(1L, 5, TWO_DAYS_AGO);
+        stubExistingUser(user);
+        stubNoHistoryToday(user);
+
+        userService.recordAnswer(false);
+
+        assertThat(user.getCurrentStreak()).isEqualTo(1);
+        assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
+    }
+
+    @Test
+    @DisplayName("오늘 이미 풀었으면 streak 가 변하지 않는다")
+    void recordAnswer_alreadySolvedToday_streakUnchanged() {
+        User user = demoUser(1L, 2, TODAY); // 오늘 이미 기록됨
+        stubExistingUser(user);
+        existingHistoryToday(user, 1, 1);
+
+        userService.recordAnswer(true);
+
+        assertThat(user.getCurrentStreak()).isEqualTo(2); // 변화 없음
+        assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
+    }
+
+    // ── recordAnswer — demo 유저 자동 생성 ────────────────────────────────────
+
+    @Test
+    @DisplayName("demo 유저가 없을 때 recordAnswer: 유저 생성 후 streak=1, SolvedHistory 신규 생성")
+    void recordAnswer_demoUserAbsent_createsUserThenRecords() {
+        User created = demoUser(1L, 0, null);
+        given(userRepository.findByNickname(UserService.DEMO_NICKNAME)).willReturn(Optional.empty());
+        given(userRepository.save(any(User.class))).willReturn(created);
+        SolvedHistory newHistory = stubNoHistoryToday(created);
+
+        userService.recordAnswer(true);
+
+        // 유저 생성 확인
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getNickname()).isEqualTo("demo");
+
+        // streak 갱신 확인
+        assertThat(created.getCurrentStreak()).isEqualTo(1);
+
+        // SolvedHistory 생성 및 통계 확인
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(newHistory.getSolvedCount()).isEqualTo(1);
         assertThat(newHistory.getCorrectCount()).isEqualTo(1);
     }
 
-    @Test
-    @DisplayName("오늘 이미 풀이 기록이 있으면 기존 SolvedHistory 에 누적한다")
-    void recordAnswer_subsequentAnswerToday_accumulatesHistory() {
-        User user = demoUser(1L, 0);
-        given(userRepository.findByNickname(UserService.DEMO_NICKNAME))
-            .willReturn(Optional.of(user));
-
-        SolvedHistory existing = SolvedHistory.create(user, TODAY);
-        existing.record(true); // 이미 한 번 풀었음
-        given(solvedHistoryRepository.findByUserIdAndSolvedDate(1L, TODAY))
-            .willReturn(Optional.of(existing));
-
-        userService.recordAnswer(false);
-
-        verify(solvedHistoryRepository, never()).save(any());
-        assertThat(existing.getSolvedCount()).isEqualTo(2);
-        assertThat(existing.getCorrectCount()).isEqualTo(1); // 첫 번째만 정답
-    }
-
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private User demoUser(Long id, int streak) {
+    /** streak 과 lastSolvedDate 를 원하는 값으로 세팅한 demo 유저를 만든다. */
+    private User demoUser(Long id, int streak, LocalDate lastSolvedDate) {
         User user = User.builder()
             .nickname("demo")
             .currentStreak(streak)
             .maxStreak(streak)
+            .lastSolvedDate(lastSolvedDate)
             .build();
         setField(user, "id", id);
         return user;
+    }
+
+    /** userRepository 가 해당 유저를 반환하도록 stubbing. */
+    private void stubExistingUser(User user) {
+        given(userRepository.findByNickname(UserService.DEMO_NICKNAME))
+            .willReturn(Optional.of(user));
+    }
+
+    /**
+     * 오늘 SolvedHistory 가 없는 상황을 stubbing.
+     * save() 가 호출되면 미리 만들어 둔 빈 SolvedHistory 를 돌려주어
+     * 이후 record() 부작용을 테스트에서 직접 단언할 수 있게 한다.
+     */
+    private SolvedHistory stubNoHistoryToday(User user) {
+        SolvedHistory fresh = SolvedHistory.create(user, TODAY);
+        given(solvedHistoryRepository.findByUserIdAndSolvedDate(user.getId(), TODAY))
+            .willReturn(Optional.empty());
+        given(solvedHistoryRepository.save(any(SolvedHistory.class))).willReturn(fresh);
+        return fresh;
+    }
+
+    /**
+     * 오늘 SolvedHistory 가 이미 존재하는 상황을 stubbing.
+     * solved / correct 초기값을 외부에서 지정할 수 있다.
+     */
+    private SolvedHistory existingHistoryToday(User user, int solved, int correct) {
+        SolvedHistory history = SolvedHistory.create(user, TODAY);
+        for (int i = 0; i < solved; i++) {
+            history.record(i < correct);
+        }
+        given(solvedHistoryRepository.findByUserIdAndSolvedDate(user.getId(), TODAY))
+            .willReturn(Optional.of(history));
+        return history;
     }
 
     private static void setField(Object target, String fieldName, Object value) {
