@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,4 +27,9 @@ public interface SolvedHistoryRepository extends JpaRepository<SolvedHistory, Lo
         @Param("from") LocalDate from,
         @Param("to") LocalDate to
     );
+
+    /** 회원탈퇴 시 해당 유저의 풀이 기록 전체 삭제. */
+    @Modifying
+    @Query("DELETE FROM SolvedHistory h WHERE h.user.id = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 }

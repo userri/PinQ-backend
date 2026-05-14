@@ -1,5 +1,7 @@
 package com.example.pinq_backend.quiz.exception;
 
+import com.example.pinq_backend.user.exception.DuplicateNicknameException;
+import com.example.pinq_backend.user.exception.UserNotFoundException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,26 @@ public class GlobalExceptionHandler {
             "timestamp", OffsetDateTime.now().toString(),
             "status", 503,
             "error", "Service Unavailable",
+            "message", e.getMessage()
+        ));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleUserNotFound(UserNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+            "timestamp", OffsetDateTime.now().toString(),
+            "status", 404,
+            "error", "Not Found",
+            "message", e.getMessage()
+        ));
+    }
+
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateNickname(DuplicateNicknameException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+            "timestamp", OffsetDateTime.now().toString(),
+            "status", 409,
+            "error", "Conflict",
             "message", e.getMessage()
         ));
     }

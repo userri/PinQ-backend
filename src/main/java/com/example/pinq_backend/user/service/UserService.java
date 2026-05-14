@@ -2,6 +2,8 @@ package com.example.pinq_backend.user.service;
 
 import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
+import com.example.pinq_backend.user.exception.DuplicateNicknameException;
+import com.example.pinq_backend.user.exception.UserNotFoundException;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
@@ -50,13 +52,42 @@ public class UserService {
 
     /**
      * demo 유저를 반환한다. 존재하지 않으면 새로 생성한 뒤 반환한다.
-     *
-     * prod 프로파일에서는 DataInitializer 가 실행되지 않아 demo 유저가 없을 수 있다.
-     * orElseGet 으로 생성하므로 어떤 프로파일·환경에서도 503 이 발생하지 않는다.
      */
     @Transactional
     public User findDemoUser() {
         return findOrCreateDemoUser();
+    }
+
+    /**
+     * 회원가입 — 닉네임으로 새 유저를 생성한다.
+     * 이미 같은 닉네임이 존재하면 DuplicateNicknameException(409).
+     */
+    @Transactional
+    public User register(String nickname) {
+        if (userRepository.findByNickname(nickname).isPresent()) {
+            throw new DuplicateNicknameException(nickname);
+        }
+        return userRepository.save(
+            User.builder()
+                .nickname(nickname)
+                .currentStreak(0)
+                .maxStreak(0)
+                .build()
+        );
+    }
+
+    /**
+     * 회원탈퇴 — 닉네임으로 유저를 찾아 solved_history 포함 삭제.
+     * Phase 3 에서는 인증된 userId 로 교체 예정.
+     */
+    @Transactional
+    public void withdraw(String nickname) {
+        User user = userRepository.findByNickname(nickname)
+            .orElseThrow(() -> new UserNotFoundException(nickname));
+
+        // FK 제약 위반 방지: solved_history 먼저 삭제
+        solvedHistoryRepository.deleteByUserId(user.getId());
+        userRepository.delete(user);
     }
 
     private User findOrCreateDemoUser() {
