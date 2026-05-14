@@ -2,7 +2,9 @@ package com.example.pinq_backend.quiz.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doNothing;
 
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.quiz.domain.Quiz;
@@ -11,6 +13,7 @@ import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.user.service.UserService;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +36,9 @@ class QuizServiceTest {
 
     @Mock
     private QuizRepository quizRepository;
+
+    @Mock
+    private UserService userService;
 
     @InjectMocks
     private QuizService quizService;
@@ -60,6 +66,7 @@ class QuizServiceTest {
     void checkAnswer_correct() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "증시 문제", 2);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+        doNothing().when(userService).recordAnswer(anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 2L);
 
@@ -79,6 +86,7 @@ class QuizServiceTest {
     void checkAnswer_wrong() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.REAL_ESTATE, "부동산 문제", 3);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+        doNothing().when(userService).recordAnswer(anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 1L);
 
