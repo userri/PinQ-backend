@@ -6,8 +6,6 @@ import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
-import com.example.pinq_backend.user.domain.User;
-import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -22,11 +20,13 @@ import org.springframework.transaction.annotation.Transactional;
  * Phase 2 시드 데이터 로더.
  *
  * 순서:
- *  1) demo 유저 1명 (anonymous)
- *  2) 카테고리별 NewsArticle 4건
- *  3) 각 기사 기반 Quiz 4개 + 각 4개의 Choice
+ *  1) 카테고리별 NewsArticle 4건
+ *  2) 각 기사 기반 Quiz 4개 + 각 4개의 Choice
  *
- * 멱등: 이미 데이터가 있으면 건너뜀.
+ * demo 유저 시드는 UserService.findDemoUser() 의 findOrCreate 로 위임한다.
+ * DataInitializer 가 활성화되지 않는 prod 환경에서도 demo 유저가 자동 생성된다.
+ *
+ * 멱등: 퀴즈 데이터가 이미 있으면 건너뜀.
  */
 @Component
 @Profile({"local", "h2", "dev"})
@@ -34,34 +34,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class DataInitializer implements ApplicationRunner {
 
-    private final UserRepository userRepository;
     private final NewsArticleRepository newsArticleRepository;
     private final QuizRepository quizRepository;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        seedDemoUser();
         if (quizRepository.count() > 0) {
             log.info("[DataInitializer] 퀴즈 데이터가 이미 존재합니다. 시드 건너뜀.");
             return;
         }
         List<NewsArticle> articles = seedArticles();
         seedQuizzes(articles);
-        log.info("[DataInitializer] User 1, Article {}, Quiz {} 시드 완료",
+        log.info("[DataInitializer] Article {}, Quiz {} 시드 완료",
             articles.size(), articles.size());
-    }
-
-    private void seedDemoUser() {
-        if (userRepository.findByNickname("demo").isPresent()) {
-            return;
-        }
-        userRepository.save(User.builder()
-            .nickname("demo")
-            // oauth_* 는 Phase 3 까지 NULL
-            .currentStreak(0)
-            .maxStreak(0)
-            .build());
     }
 
     private List<NewsArticle> seedArticles() {
