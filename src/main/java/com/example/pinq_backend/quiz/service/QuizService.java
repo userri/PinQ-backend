@@ -5,6 +5,7 @@ import com.example.pinq_backend.quiz.dto.AnswerResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.user.service.UserService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,8 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  *  - {@link #getTodayQuizzes()}: 오늘 풀 4개 문제를 반환 (정답/해설/기사 미포함).
  *  - {@link #checkAnswer(Long, Long)}: 정답 채점 + 해설/기사/keyword 포함 응답.
- *
- * Phase 2 변경점: option → choice 명명 정렬, article 은 FK 로 연결됨.
+ *    → 채점 결과를 UserService 에 전달해 스트릭/통계를 함께 갱신한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class QuizService {
 
     private final QuizRepository quizRepository;
+    private final UserService userService;
 
     public List<QuizResponse> getTodayQuizzes() {
         return quizRepository.findAllByOrderByIdAsc().stream()
@@ -31,9 +32,16 @@ public class QuizService {
             .toList();
     }
 
+    @Transactional
     public AnswerResponse checkAnswer(Long quizId, Long selectedChoiceId) {
         Quiz quiz = quizRepository.findById(quizId)
             .orElseThrow(() -> new QuizNotFoundException(quizId));
-        return AnswerResponse.of(quiz, selectedChoiceId);
+
+        AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
+
+        // 스트릭 · 일별 집계 갱신
+        userService.recordAnswer(response.correct());
+
+        return response;
     }
 }
