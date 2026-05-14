@@ -113,6 +113,12 @@ public class Quiz extends BaseTimeEntity {
             ));
     }
 
+    /** 주어진 choiceId 가 이 퀴즈의 보기 중 하나인지 확인. */
+    public boolean hasChoice(Long choiceId) {
+        return choices.stream()
+            .anyMatch(c -> c.getId().equals(choiceId));
+    }
+
     /** 주어진 choice id 가 이 퀴즈의 정답인지 판정. */
     public boolean isCorrectAnswer(Long choiceId) {
         return getAnswerChoice().getId().equals(choiceId);

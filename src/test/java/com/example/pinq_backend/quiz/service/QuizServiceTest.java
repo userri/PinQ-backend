@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.dto.AnswerResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse;
+import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
@@ -24,12 +27,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * QuizService 핵심 동작 4개를 검증한다.
+ * QuizService 핵심 동작을 검증한다.
  *
  *  1. 오늘의 퀴즈 목록 반환 — category 가 article 에서 파생되는지 검증
  *  2. 정답 choice 를 고르면 correct=true 와 keyword/article 포함
  *  3. 오답 choice 는 correct=false + 정답 choice id 반환
  *  4. 존재하지 않는 퀴즈 id 는 QuizNotFoundException
+ *  5. 해당 퀴즈에 속하지 않는 choiceId 는 InvalidChoiceException — 통계 미기록
  */
 @ExtendWith(MockitoExtension.class)
 class QuizServiceTest {
@@ -103,5 +107,21 @@ class QuizServiceTest {
         assertThatThrownBy(() -> quizService.checkAnswer(999L, 1L))
             .isInstanceOf(QuizNotFoundException.class)
             .hasMessageContaining("999");
+    }
+
+    @Test
+    @DisplayName("해당 퀴즈에 속하지 않는 choiceId 는 InvalidChoiceException 을 던지고 통계를 기록하지 않는다")
+    void checkAnswer_invalidChoiceId_throwsAndSkipsStats() {
+        Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "증시 문제", 2);
+        given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+        // choiceId=9999 는 이 퀴즈의 보기(1~4)에 속하지 않음
+        assertThatThrownBy(() -> quizService.checkAnswer(1L, 9999L))
+            .isInstanceOf(InvalidChoiceException.class)
+            .hasMessageContaining("9999")
+            .hasMessageContaining("1");
+
+        // 통계가 기록되지 않아야 한다
+        verify(userService, never()).recordAnswer(anyBoolean());
     }
 }

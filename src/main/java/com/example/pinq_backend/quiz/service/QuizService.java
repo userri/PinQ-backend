@@ -3,6 +3,7 @@ package com.example.pinq_backend.quiz.service;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.dto.AnswerResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse;
+import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.user.service.UserService;
@@ -17,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  *  - {@link #getTodayQuizzes()}: 오늘 풀 4개 문제를 반환 (정답/해설/기사 미포함).
  *  - {@link #checkAnswer(Long, Long)}: 정답 채점 + 해설/기사/keyword 포함 응답.
  *    → 채점 결과를 UserService 에 전달해 스트릭/통계를 함께 갱신한다.
+ *    → 제출한 choiceId 가 해당 퀴즈의 보기가 아니면 InvalidChoiceException(400) 을 던져
+ *       통계 오염을 방지한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,10 @@ public class QuizService {
     public AnswerResponse checkAnswer(Long quizId, Long selectedChoiceId) {
         Quiz quiz = quizRepository.findById(quizId)
             .orElseThrow(() -> new QuizNotFoundException(quizId));
+
+        if (!quiz.hasChoice(selectedChoiceId)) {
+            throw new InvalidChoiceException(quizId, selectedChoiceId);
+        }
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
 

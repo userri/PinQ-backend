@@ -12,9 +12,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * 공통 예외 핸들러.
  *
- *  - QuizNotFoundException  → 404
- *  - IllegalStateException  → 503  (예: demo 유저 미존재 등 서버 상태 이상)
- *  - 요청 바디 검증 실패      → 400 + 어떤 필드가 문제인지
+ *  - QuizNotFoundException    → 404
+ *  - InvalidChoiceException   → 400 (제출한 choiceId 가 해당 퀴즈의 보기가 아님)
+ *  - IllegalStateException    → 503  (예: demo 유저 미존재 등 서버 상태 이상)
+ *  - 요청 바디 검증 실패        → 400 + 어떤 필드가 문제인지
  *
  * Phase 1 최소 구현. 추후 ProblemDetail(RFC 7807) 또는 별도 ErrorResponse 클래스로 정돈 예정.
  */
@@ -29,6 +30,18 @@ public class GlobalExceptionHandler {
             "error", "Not Found",
             "message", e.getMessage(),
             "quizId", e.getQuizId()
+        ));
+    }
+
+    @ExceptionHandler(InvalidChoiceException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidChoice(InvalidChoiceException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            "timestamp", OffsetDateTime.now().toString(),
+            "status", 400,
+            "error", "Bad Request",
+            "message", e.getMessage(),
+            "quizId", e.getQuizId(),
+            "choiceId", e.getChoiceId()
         ));
     }
 
