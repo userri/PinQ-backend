@@ -9,11 +9,13 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,7 +37,10 @@ import lombok.NoArgsConstructor;
  *  - 그 중 정확히 1개만 is_answer=true 이어야 한다.
  */
 @Entity
-@Table(name = "quiz")
+@Table(
+    name = "quiz",
+    indexes = @Index(name = "idx_quiz_date", columnList = "quiz_date")
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Quiz extends BaseTimeEntity {
@@ -49,6 +54,10 @@ public class Quiz extends BaseTimeEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "article_id", nullable = false)
     private NewsArticle article;
+
+    /** 이 퀴즈가 제공되는 날짜. null = Phase 2 시드 데이터 (날짜 무관). */
+    @Column(name = "quiz_date")
+    private LocalDate quizDate;
 
     @Column(name = "question", nullable = false, length = 1000)
     private String question;
@@ -71,6 +80,7 @@ public class Quiz extends BaseTimeEntity {
     @Builder
     private Quiz(
         NewsArticle article,
+        LocalDate quizDate,
         String question,
         String explanation,
         String keyword,
@@ -78,6 +88,7 @@ public class Quiz extends BaseTimeEntity {
     ) {
         validateChoices(choices);
         this.article = article;
+        this.quizDate = quizDate;
         this.question = question;
         this.explanation = explanation;
         this.keyword = keyword;
