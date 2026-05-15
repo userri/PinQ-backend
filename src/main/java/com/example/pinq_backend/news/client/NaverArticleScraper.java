@@ -24,7 +24,7 @@ public class NaverArticleScraper {
     private static final int TIMEOUT_MS = 5_000;
 
     /**
-     * Claude에 넘길 최대 글자 수.
+     * OpenAI에 넘길 최대 글자 수.
      * 기사 본문이 너무 길면 토큰 낭비이므로 앞부분 2000자만 사용.
      */
     private static final int MAX_CHARS = 2_000;

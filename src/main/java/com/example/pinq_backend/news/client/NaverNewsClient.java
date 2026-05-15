@@ -43,7 +43,7 @@ public class NaverNewsClient {
      */
     public List<NaverNewsItem> search(String keyword, int count) {
         try {
-            URI uri = UriComponentsBuilder.fromHttpUrl(BASE_URL)
+            URI uri = UriComponentsBuilder.fromUriString(BASE_URL)
                 .queryParam("query", keyword)
                 .queryParam("display", count)
                 .queryParam("sort", "date")

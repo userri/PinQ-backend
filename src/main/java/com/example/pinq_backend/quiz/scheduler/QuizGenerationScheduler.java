@@ -21,7 +21,7 @@ public class QuizGenerationScheduler {
 
     /**
      * 매일 오전 6시 KST 자동 실행.
-     * 네이버 API → Claude API → DB 저장까지 수초~수십초 소요.
+     * 네이버 API → OpenAI API → DB 저장까지 수초~수십초 소요.
      */
     @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Seoul")
     public void generateDailyQuizzes() {

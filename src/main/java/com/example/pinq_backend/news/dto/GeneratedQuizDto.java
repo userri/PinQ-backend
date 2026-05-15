@@ -3,7 +3,7 @@ package com.example.pinq_backend.news.dto;
 import java.util.List;
 
 /**
- * Claude API가 생성한 퀴즈 데이터.
+ * OpenAI API가 생성한 퀴즈 데이터.
  * JSON 역직렬화 대상이므로 Jackson 기본 생성자가 필요한 일반 클래스로 선언.
  */
 public class GeneratedQuizDto {

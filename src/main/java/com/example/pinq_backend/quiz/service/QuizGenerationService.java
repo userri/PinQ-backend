@@ -3,9 +3,9 @@ package com.example.pinq_backend.quiz.service;
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
-import com.example.pinq_backend.news.client.ClaudeQuizClient;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
+import com.example.pinq_backend.news.client.OpenAIQuizClient;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.example.pinq_backend.news.dto.NaverNewsItem;
 import com.example.pinq_backend.quiz.domain.Choice;
@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * 흐름:
  *  1. 카테고리별 검색 키워드로 네이버 뉴스 API 호출
- *  2. Claude API로 뉴스 → 4지선다 퀴즈 변환
+ *  2. OpenAI API로 뉴스 → 4지선다 퀴즈 변환
  *  3. NewsArticle + Quiz + Choice를 DB에 저장
  *
  * 카테고리당 퀴즈 1개, 총 4개 생성 (INTEREST_RATE / EXCHANGE_RATE / STOCK / REAL_ESTATE).
@@ -41,10 +41,10 @@ public class QuizGenerationService {
 
     /** 카테고리 → 네이버 검색 키워드 매핑 */
     private static final Map<Category, String> CATEGORY_KEYWORDS = Map.of(
-        Category.INTEREST_RATE, "금리 한국은행",
-        Category.EXCHANGE_RATE, "환율 달러",
-        Category.STOCK, "코스피 증시",
-        Category.REAL_ESTATE, "부동산 아파트"
+        Category.INTEREST_RATE, "금리",
+        Category.EXCHANGE_RATE, "환율",
+        Category.STOCK, "증시",
+        Category.REAL_ESTATE, "부동산"
     );
 
     /** 카테고리당 후보 뉴스 개수 (퀴즈 생성 실패 시 다음 기사로 재시도) */
@@ -55,7 +55,7 @@ public class QuizGenerationService {
 
     private final NaverNewsClient naverNewsClient;
     private final NaverArticleScraper naverArticleScraper;
-    private final ClaudeQuizClient claudeQuizClient;
+    private final OpenAIQuizClient openAIQuizClient;
     private final QuizRepository quizRepository;
     private final NewsArticleRepository newsArticleRepository;
     private final Clock clock;
@@ -118,12 +118,12 @@ public class QuizGenerationService {
 
             if (content.isBlank()) continue;
 
-            Optional<GeneratedQuizDto> quizOpt = claudeQuizClient.generateQuiz(title, content);
+            Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(title, content);
             if (quizOpt.isEmpty()) continue;
 
             GeneratedQuizDto dto = quizOpt.get();
             if (!isValidQuiz(dto)) {
-                log.warn("Claude 응답 유효성 검증 실패. title={}", title);
+                log.warn("OpenAI 응답 유효성 검증 실패. title={}", title);
                 continue;
             }
 
@@ -169,7 +169,7 @@ public class QuizGenerationService {
         return false;
     }
 
-    /** Claude 응답이 퀴즈 도메인 규칙을 충족하는지 검증. */
+    /** OpenAI 응답이 퀴즈 도메인 규칙을 충족하는지 검증. */
     private boolean isValidQuiz(GeneratedQuizDto dto) {
         if (dto.getQuestion() == null || dto.getQuestion().isBlank()) return false;
         if (dto.getChoices() == null || dto.getChoices().size() != 4) return false;

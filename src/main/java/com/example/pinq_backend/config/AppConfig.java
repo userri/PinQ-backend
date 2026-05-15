@@ -1,7 +1,8 @@
 package com.example.pinq_backend.config;
 
-import com.example.pinq_backend.config.properties.AnthropicProperties;
 import com.example.pinq_backend.config.properties.NaverNewsProperties;
+import com.example.pinq_backend.config.properties.OpenAIProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.ZoneId;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,7 +22,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties({NaverNewsProperties.class, AnthropicProperties.class})
+@EnableConfigurationProperties({NaverNewsProperties.class, OpenAIProperties.class})
 public class AppConfig {
 
     public static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -29,5 +30,10 @@ public class AppConfig {
     @Bean
     public Clock clock() {
         return Clock.system(KST);
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 }
