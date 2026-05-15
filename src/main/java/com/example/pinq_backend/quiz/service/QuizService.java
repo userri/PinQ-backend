@@ -7,6 +7,8 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.user.service.UserService;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,11 +30,17 @@ public class QuizService {
 
     private final QuizRepository quizRepository;
     private final UserService userService;
+    private final Clock clock;
 
     public List<QuizResponse> getTodayQuizzes() {
-        return quizRepository.findAllByOrderByIdAsc().stream()
-            .map(QuizResponse::from)
-            .toList();
+        LocalDate today = LocalDate.now(clock);
+
+        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터 폴백
+        List<Quiz> quizzes = quizRepository.countByQuizDate(today) > 0
+            ? quizRepository.findAllByQuizDateOrderByIdAsc(today)
+            : quizRepository.findAllByOrderByIdAsc();
+
+        return quizzes.stream().map(QuizResponse::from).toList();
     }
 
     @Transactional
