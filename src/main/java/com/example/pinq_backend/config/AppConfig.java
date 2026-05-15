@@ -1,9 +1,13 @@
 package com.example.pinq_backend.config;
 
+import com.example.pinq_backend.config.properties.AnthropicProperties;
+import com.example.pinq_backend.config.properties.NaverNewsProperties;
 import java.time.Clock;
 import java.time.ZoneId;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 애플리케이션 공통 빈.
@@ -16,6 +20,8 @@ import org.springframework.context.annotation.Configuration;
  *    테스트에서 Clock.fixed() 로 날짜를 완전히 제어할 수 있다.
  */
 @Configuration
+@EnableScheduling
+@EnableConfigurationProperties({NaverNewsProperties.class, AnthropicProperties.class})
 public class AppConfig {
 
     public static final ZoneId KST = ZoneId.of("Asia/Seoul");
