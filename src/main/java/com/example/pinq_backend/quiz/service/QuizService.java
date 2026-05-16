@@ -54,8 +54,8 @@ public class QuizService {
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
 
-        // 스트릭 · 일별 집계 갱신
-        userService.recordAnswer(response.correct());
+        // 스트릭 · 일별 집계 갱신 (첫 시도일 때만 통계 반영 — quizId 로 중복 시도 식별)
+        userService.recordAnswer(quizId, response.correct());
 
         return response;
     }
