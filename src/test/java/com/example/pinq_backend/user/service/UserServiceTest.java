@@ -27,6 +27,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * UserService 핵심 동작 검증.
@@ -49,6 +50,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *
  * [recordAnswer — demo 유저 자동 생성]
  * 11. demo 유저가 없을 때 recordAnswer: 유저 생성 후 streak=1, SolvedHistory 생성
+ *
+ * [recordAnswer — 동시성]
+ * 12. exists=false 확인 후 saveAndFlush 에서 UK 위반 시: 통계 갱신 없이 조용히 종료
  */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -120,13 +124,12 @@ class UserServiceTest {
     void recordAnswer_firstAnswerToday_correct() {
         User user = demoUser(1L, 0, null);
         stubExistingUser(user);
-        // save() 호출 시 record()가 불린 history 객체 자체를 반환하도록 stubbing
         SolvedHistory[] captured = captureHistoryOnSave(user);
 
         userService.recordAnswer(QUIZ_1, true);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
-        verify(userQuizAttemptRepository).save(any(UserQuizAttempt.class));
+        verify(userQuizAttemptRepository).saveAndFlush(any(UserQuizAttempt.class));
         assertThat(captured[0].getSolvedCount()).isEqualTo(1);
         assertThat(captured[0].getCorrectCount()).isEqualTo(1);
     }
@@ -150,11 +153,10 @@ class UserServiceTest {
     void recordAnswer_additionalAnswerToday_correct_differentQuiz() {
         User user = demoUser(1L, 1, TODAY);
         stubExistingUser(user);
-        SolvedHistory existing = existingHistoryToday(user, 2, 1); // 기존: 2풀이 1정답
+        SolvedHistory existing = existingHistoryToday(user, 2, 1);
 
         userService.recordAnswer(QUIZ_2, true);
 
-        // 실제 코드는 기존 history 있어도 save() 호출 — 항상 flush
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(existing.getSolvedCount()).isEqualTo(3);
         assertThat(existing.getCorrectCount()).isEqualTo(2);
@@ -165,7 +167,7 @@ class UserServiceTest {
     void recordAnswer_additionalAnswerToday_wrong_differentQuiz() {
         User user = demoUser(1L, 1, TODAY);
         stubExistingUser(user);
-        SolvedHistory existing = existingHistoryToday(user, 2, 2); // 기존: 2풀이 2정답
+        SolvedHistory existing = existingHistoryToday(user, 2, 2);
 
         userService.recordAnswer(QUIZ_2, false);
 
@@ -184,10 +186,29 @@ class UserServiceTest {
 
         userService.recordAnswer(QUIZ_1, true);
 
-        verify(userQuizAttemptRepository, never()).save(any());
+        verify(userQuizAttemptRepository, never()).saveAndFlush(any());
         verify(solvedHistoryRepository, never()).save(any());
         verify(userRepository, never()).save(any());
         assertThat(user.getCurrentStreak()).isEqualTo(3);
+    }
+
+    // ── recordAnswer — 동시성 ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("동시 요청으로 saveAndFlush 에서 UK 위반 발생 시: 통계/스트릭 갱신 없이 조용히 종료")
+    void recordAnswer_concurrentDuplicate_dataIntegrityViolation_skipsStats() {
+        User user = demoUser(1L, 2, YESTERDAY);
+        stubExistingUser(user);
+        // exists=false 로 통과했지만 flush 시 UK 위반 발생 (race condition 시뮬레이션)
+        given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
+                .willThrow(new DataIntegrityViolationException("uk_user_quiz_attempt"));
+
+        userService.recordAnswer(QUIZ_1, true);
+
+        // streak·SolvedHistory 갱신 없이 종료되어야 한다
+        verify(solvedHistoryRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
+        assertThat(user.getCurrentStreak()).isEqualTo(2); // 변화 없음
     }
 
     // ── recordAnswer — streak ─────────────────────────────────────────────────
@@ -251,13 +272,11 @@ class UserServiceTest {
     void recordAnswer_demoUserAbsent_createsUserThenRecords() {
         User created = demoUser(1L, 0, null);
         given(userRepository.findByNickname(UserService.DEMO_NICKNAME)).willReturn(Optional.empty());
-        // save() 첫 번째 호출 = 유저 생성, 두 번째 호출 = streak flush
         given(userRepository.save(any(User.class))).willReturn(created);
         SolvedHistory[] captured = captureHistoryOnSave(created);
 
         userService.recordAnswer(QUIZ_1, true);
 
-        // 유저 생성 + streak flush = save 2회
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository, org.mockito.Mockito.times(2)).save(userCaptor.capture());
         assertThat(userCaptor.getAllValues().get(0).getNickname()).isEqualTo("demo");
@@ -289,13 +308,15 @@ class UserServiceTest {
 
     /**
      * 오늘 SolvedHistory 없는 상황 stubbing.
-     * save() 가 호출될 때 실제로 전달된 history 객체를 captured[0] 에 담아 반환한다.
-     * record() 가 history 객체에 직접 불리므로 save 반환값이 아닌 인자를 잡아야 단언 가능.
+     * saveAndFlush() 가 호출될 때 전달된 attempt 객체를 그대로 반환한다.
+     * save() 가 호출될 때 전달된 history 객체를 captured[0] 에 담아 반환한다.
      */
     private SolvedHistory[] captureHistoryOnSave(User user) {
         SolvedHistory[] captured = new SolvedHistory[1];
         given(solvedHistoryRepository.findByUserIdAndSolvedDate(user.getId(), TODAY))
                 .willReturn(Optional.empty());
+        given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
+                .willAnswer(inv -> inv.getArgument(0));
         given(solvedHistoryRepository.save(any(SolvedHistory.class)))
                 .willAnswer(inv -> {
                     captured[0] = inv.getArgument(0);
@@ -314,6 +335,8 @@ class UserServiceTest {
         }
         given(solvedHistoryRepository.findByUserIdAndSolvedDate(user.getId(), TODAY))
                 .willReturn(Optional.of(history));
+        given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
+                .willAnswer(inv -> inv.getArgument(0));
         given(solvedHistoryRepository.save(any(SolvedHistory.class))).willReturn(history);
         return history;
     }

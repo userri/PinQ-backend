@@ -11,6 +11,7 @@ import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,27 +46,41 @@ public class UserService {
      *   - UserQuizAttempt row 생성
      *   - User.currentStreak 갱신
      *   - SolvedHistory 일별 집계 upsert
+     *
+     * 동시성 안전:
+     *   existsByUserIdAndQuizId 체크와 save 사이에 다른 요청이 끼어들어
+     *   두 요청 모두 exists=false 를 보는 race condition 이 발생할 수 있다.
+     *   이 경우 UK 제약(uk_user_quiz_attempt)이 방어선이 되어 두 번째 INSERT 를 막는다.
+     *   DataIntegrityViolationException 을 catch 해 중복 시도로 조용히 처리하므로
+     *   500 이 아닌 정상 흐름으로 종료된다.
      */
     @Transactional
     public void recordAnswer(Long quizId, boolean isCorrect) {
         User user = userRepository.findByNickname(DEMO_NICKNAME)
-            .orElseGet(() -> userRepository.save(
-                User.builder()
-                    .nickname(DEMO_NICKNAME)
-                    .currentStreak(0)
-                    .maxStreak(0)
-                    .build()
-            ));
+                .orElseGet(() -> userRepository.save(
+                        User.builder()
+                                .nickname(DEMO_NICKNAME)
+                                .currentStreak(0)
+                                .maxStreak(0)
+                                .build()
+                ));
 
-        // 첫 시도가 아니면 통계 변경 없이 종료
+        // 빠른 경로: 이미 시도된 적 있으면 통계 변경 없이 종료 (단일 요청 중복 방어)
         if (userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), quizId)) {
             return;
         }
 
         LocalDate today = LocalDate.now(clock);
 
-        // 시도 기록 (유니크 제약으로 중복 INSERT 방지)
-        userQuizAttemptRepository.save(UserQuizAttempt.create(user, quizId, isCorrect));
+        // 시도 기록 — race condition 으로 동시에 두 요청이 여기에 도달하면
+        // 두 번째 save 가 DataIntegrityViolationException 을 던진다.
+        // catch 해서 중복 시도로 처리하고 통계 갱신 없이 종료한다.
+        try {
+            userQuizAttemptRepository.saveAndFlush(UserQuizAttempt.create(user, quizId, isCorrect));
+        } catch (DataIntegrityViolationException ignored) {
+            // 동시 요청이 먼저 INSERT 를 완료한 경우 — 중복 시도로 간주하고 종료
+            return;
+        }
 
         // 스트릭 갱신 (오늘 이미 기록됐으면 내부에서 무시)
         user.recordSolvedOn(today);
@@ -73,8 +88,8 @@ public class UserService {
 
         // 일별 집계 upsert — 신규 row 와 기존 row 모두 save() 로 확실히 반영
         SolvedHistory history = solvedHistoryRepository
-            .findByUserIdAndSolvedDate(user.getId(), today)
-            .orElseGet(() -> SolvedHistory.create(user, today));
+                .findByUserIdAndSolvedDate(user.getId(), today)
+                .orElseGet(() -> SolvedHistory.create(user, today));
         history.record(isCorrect);
         solvedHistoryRepository.save(history);  // INSERT or UPDATE
     }
@@ -97,11 +112,11 @@ public class UserService {
             throw new DuplicateNicknameException(nickname);
         }
         return userRepository.save(
-            User.builder()
-                .nickname(nickname)
-                .currentStreak(0)
-                .maxStreak(0)
-                .build()
+                User.builder()
+                        .nickname(nickname)
+                        .currentStreak(0)
+                        .maxStreak(0)
+                        .build()
         );
     }
 
@@ -112,7 +127,7 @@ public class UserService {
     @Transactional
     public void withdraw(String nickname) {
         User user = userRepository.findByNickname(nickname)
-            .orElseThrow(() -> new UserNotFoundException(nickname));
+                .orElseThrow(() -> new UserNotFoundException(nickname));
 
         // FK 제약 위반 방지: 자식 row 들 먼저 삭제
         userQuizAttemptRepository.deleteByUserId(user.getId());
@@ -122,12 +137,12 @@ public class UserService {
 
     private User findOrCreateDemoUser() {
         return userRepository.findByNickname(DEMO_NICKNAME)
-            .orElseGet(() -> userRepository.save(
-                User.builder()
-                    .nickname(DEMO_NICKNAME)
-                    .currentStreak(0)
-                    .maxStreak(0)
-                    .build()
-            ));
+                .orElseGet(() -> userRepository.save(
+                        User.builder()
+                                .nickname(DEMO_NICKNAME)
+                                .currentStreak(0)
+                                .maxStreak(0)
+                                .build()
+                ));
     }
 }
