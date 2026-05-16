@@ -73,7 +73,7 @@ public class UserService {
         LocalDate today = LocalDate.now(clock);
 
         // 시도 기록 — race condition 으로 동시에 두 요청이 여기에 도달하면
-        // 두 번째 save 가 DataIntegrityViolationException 을 던진다.
+        // 두 번째 saveAndFlush 가 DataIntegrityViolationException 을 던진다.
         // catch 해서 중복 시도로 처리하고 통계 갱신 없이 종료한다.
         try {
             userQuizAttemptRepository.saveAndFlush(UserQuizAttempt.create(user, quizId, isCorrect));
@@ -105,19 +105,30 @@ public class UserService {
     /**
      * 회원가입 — 닉네임으로 새 유저를 생성한다.
      * 이미 같은 닉네임이 존재하면 DuplicateNicknameException(409).
+     *
+     * 동시성 안전:
+     *   findByNickname 체크는 빠른 경로(단일 요청 중복 방어)이며,
+     *   DB 의 uk_user_nickname 이 실질적인 방어선이다.
+     *   동시 요청이 둘 다 check=없음 을 보고 INSERT 하면 두 번째 요청에서
+     *   DataIntegrityViolationException 이 발생하고 이를 DuplicateNicknameException 으로 변환한다.
      */
     @Transactional
     public User register(String nickname) {
         if (userRepository.findByNickname(nickname).isPresent()) {
             throw new DuplicateNicknameException(nickname);
         }
-        return userRepository.save(
-                User.builder()
-                        .nickname(nickname)
-                        .currentStreak(0)
-                        .maxStreak(0)
-                        .build()
-        );
+        try {
+            return userRepository.saveAndFlush(
+                    User.builder()
+                            .nickname(nickname)
+                            .currentStreak(0)
+                            .maxStreak(0)
+                            .build()
+            );
+        } catch (DataIntegrityViolationException e) {
+            // 동시 요청이 먼저 같은 닉네임으로 INSERT 를 완료한 경우
+            throw new DuplicateNicknameException(nickname);
+        }
     }
 
     /**

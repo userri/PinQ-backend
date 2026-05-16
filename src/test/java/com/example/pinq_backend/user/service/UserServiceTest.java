@@ -1,6 +1,7 @@
 package com.example.pinq_backend.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -12,6 +13,7 @@ import com.example.pinq_backend.config.AppConfig;
 import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
+import com.example.pinq_backend.user.exception.DuplicateNicknameException;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
@@ -36,23 +38,28 @@ import org.springframework.dao.DataIntegrityViolationException;
  *  1. demo 유저가 없으면 새로 생성해 반환한다
  *  2. demo 유저가 이미 있으면 저장 없이 반환한다
  *
+ * [register]
+ *  3. 새 닉네임이면 유저를 생성하여 반환한다
+ *  4. 이미 존재하는 닉네임이면 DuplicateNicknameException(사전 체크)
+ *  5. 동시 요청으로 UK 위반 시 DuplicateNicknameException 으로 변환
+ *
  * [recordAnswer — SolvedHistory]
- *  3. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct+1 (정답)
- *  4. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct 불변 (오답)
- *  5. 오늘 추가 풀이: 기존 SolvedHistory 에 solved+1 / correct+1 누적 후 save 호출
- *  6. 오늘 추가 풀이: 기존 SolvedHistory 에 solved+1 / correct 불변 누적 후 save 호출
+ *  6. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct+1 (정답)
+ *  7. 오늘 첫 풀이: SolvedHistory 신규 생성, solved+1 / correct 불변 (오답)
+ *  8. 오늘 추가 풀이: 기존 SolvedHistory 에 solved+1 / correct+1 누적 후 save 호출
+ *  9. 오늘 추가 풀이: 기존 SolvedHistory 에 solved+1 / correct 불변 누적 후 save 호출
  *
  * [recordAnswer — streak]
- *  7. 풀이 이력 전무(lastSolvedDate=null): streak 1로 시작
- *  8. 어제 풀었으면: streak 연속 증가
- *  9. 이틀 전에 마지막으로 풀었으면: streak 1로 리셋
- * 10. 오늘 이미 풀었으면: streak 변화 없음
+ * 10. 풀이 이력 전무(lastSolvedDate=null): streak 1로 시작
+ * 11. 어제 풀었으면: streak 연속 증가
+ * 12. 이틀 전에 마지막으로 풀었으면: streak 1로 리셋
+ * 13. 오늘 이미 풀었으면: streak 변화 없음
  *
  * [recordAnswer — demo 유저 자동 생성]
- * 11. demo 유저가 없을 때 recordAnswer: 유저 생성 후 streak=1, SolvedHistory 생성
+ * 14. demo 유저가 없을 때 recordAnswer: 유저 생성 후 streak=1, SolvedHistory 생성
  *
  * [recordAnswer — 동시성]
- * 12. exists=false 확인 후 saveAndFlush 에서 UK 위반 시: 통계 갱신 없이 조용히 종료
+ * 15. exists=false 확인 후 saveAndFlush 에서 UK 위반 시: 통계 갱신 없이 조용히 종료
  */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -115,6 +122,52 @@ class UserServiceTest {
 
         assertThat(result).isSameAs(existing);
         verify(userRepository, never()).save(any());
+    }
+
+    // ── register ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("새 닉네임이면 유저를 생성하여 반환한다")
+    void register_newNickname_createsUser() {
+        String nickname = "alice";
+        User created = buildUser(2L, nickname, 0, null);
+        given(userRepository.findByNickname(nickname)).willReturn(Optional.empty());
+        given(userRepository.saveAndFlush(any(User.class))).willReturn(created);
+
+        User result = userService.register(nickname);
+
+        assertThat(result.getNickname()).isEqualTo(nickname);
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getNickname()).isEqualTo(nickname);
+        assertThat(captor.getValue().getCurrentStreak()).isZero();
+    }
+
+    @Test
+    @DisplayName("이미 존재하는 닉네임이면 DuplicateNicknameException 을 던진다 (사전 체크)")
+    void register_existingNickname_throwsDuplicateNickname() {
+        String nickname = "alice";
+        given(userRepository.findByNickname(nickname))
+                .willReturn(Optional.of(buildUser(2L, nickname, 0, null)));
+
+        assertThatThrownBy(() -> userService.register(nickname))
+                .isInstanceOf(DuplicateNicknameException.class)
+                .hasMessageContaining(nickname);
+
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("동시 요청으로 saveAndFlush 에서 UK 위반 시 DuplicateNicknameException 으로 변환")
+    void register_concurrentDuplicate_dataIntegrityViolation_throwsDuplicateNickname() {
+        String nickname = "alice";
+        given(userRepository.findByNickname(nickname)).willReturn(Optional.empty());
+        given(userRepository.saveAndFlush(any(User.class)))
+                .willThrow(new DataIntegrityViolationException("uk_user_nickname"));
+
+        assertThatThrownBy(() -> userService.register(nickname))
+                .isInstanceOf(DuplicateNicknameException.class)
+                .hasMessageContaining(nickname);
     }
 
     // ── recordAnswer — SolvedHistory ─────────────────────────────────────────
@@ -199,16 +252,14 @@ class UserServiceTest {
     void recordAnswer_concurrentDuplicate_dataIntegrityViolation_skipsStats() {
         User user = demoUser(1L, 2, YESTERDAY);
         stubExistingUser(user);
-        // exists=false 로 통과했지만 flush 시 UK 위반 발생 (race condition 시뮬레이션)
         given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
                 .willThrow(new DataIntegrityViolationException("uk_user_quiz_attempt"));
 
         userService.recordAnswer(QUIZ_1, true);
 
-        // streak·SolvedHistory 갱신 없이 종료되어야 한다
         verify(solvedHistoryRepository, never()).save(any());
         verify(userRepository, never()).save(any());
-        assertThat(user.getCurrentStreak()).isEqualTo(2); // 변화 없음
+        assertThat(user.getCurrentStreak()).isEqualTo(2);
     }
 
     // ── recordAnswer — streak ─────────────────────────────────────────────────
@@ -291,8 +342,12 @@ class UserServiceTest {
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private User demoUser(Long id, int streak, LocalDate lastSolvedDate) {
+        return buildUser(id, "demo", streak, lastSolvedDate);
+    }
+
+    private User buildUser(Long id, String nickname, int streak, LocalDate lastSolvedDate) {
         User user = User.builder()
-                .nickname("demo")
+                .nickname(nickname)
                 .currentStreak(streak)
                 .maxStreak(streak)
                 .lastSolvedDate(lastSolvedDate)
