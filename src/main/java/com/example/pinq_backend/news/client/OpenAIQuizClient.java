@@ -40,10 +40,11 @@ public class OpenAIQuizClient {
 
     /**
      * 뉴스 기사로부터 퀴즈를 생성한다.
+     * 생성 후 별도 검증 호출로 정답의 경제학적 정확성을 확인한다.
      *
      * @param title   뉴스 제목
      * @param content 뉴스 본문 (스크래핑 성공 시 전문, 실패 시 description 스니펫)
-     * @return 생성된 퀴즈 DTO. 오류 시 Optional.empty().
+     * @return 생성된 퀴즈 DTO. 오류 또는 검증 실패 시 Optional.empty().
      */
     public Optional<GeneratedQuizDto> generateQuiz(String title, String content) {
         Map<String, Object> requestBody = Map.of(
@@ -62,10 +63,83 @@ public class OpenAIQuizClient {
                     .retrieve()
                     .body(String.class);
 
-            return parseQuiz(rawResponse);
+            Optional<GeneratedQuizDto> quizOpt = parseQuiz(rawResponse);
+            if (quizOpt.isEmpty()) return Optional.empty();
+
+            // 생성된 퀴즈의 정답을 별도 호출로 독립 검증
+            GeneratedQuizDto quiz = quizOpt.get();
+            if (!verifyAnswer(quiz)) {
+                log.warn("정답 검증 실패, 퀴즈 폐기. question={}", quiz.getQuestion());
+                return Optional.empty();
+            }
+
+            return Optional.of(quiz);
         } catch (Exception e) {
             log.error("OpenAI API 퀴즈 생성 실패. title={}", title, e);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 생성된 퀴즈의 정답을 별도 API 호출로 독립 검증한다.
+     *
+     * 생성 호출과 컨텍스트를 완전히 분리하여,
+     * AI가 자신의 이전 답변에 bias 없이 순수하게 경제 사실만 판단하게 한다.
+     *
+     * @return true면 정답 신뢰 가능, false면 폐기
+     */
+    private boolean verifyAnswer(GeneratedQuizDto quiz) {
+        String answerContent = quiz.getChoices().stream()
+                .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
+                .map(GeneratedQuizDto.ChoiceDto::getContent)
+                .findFirst()
+                .orElse("");
+
+        String verifyPrompt = """
+                다음 경제 퀴즈의 정답이 경제학적으로 올바른지 판단하세요.
+                이전 맥락 없이 오직 경제 지식만으로 판단하세요.
+
+                문제: %s
+                정답으로 표시된 보기: %s
+
+                이 정답이 경제학 교과서 기준으로 명확히 옳으면 {"valid": true},
+                틀렸거나 불확실하면 {"valid": false, "reason": "이유"} 를 반환하세요.
+                JSON만 반환하고 다른 텍스트는 금지입니다.
+                """.formatted(quiz.getQuestion(), answerContent);
+
+        try {
+            Map<String, Object> requestBody = Map.of(
+                    "model", props.model(),
+                    "max_tokens", 128,
+                    "messages", List.of(
+                            Map.of("role", "user", "content", verifyPrompt)
+                    )
+            );
+
+            String rawResponse = restClient.post()
+                    .uri(OPENAI_API_URL)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = objectMapper.readTree(rawResponse);
+            String text = root.path("choices").get(0).path("message").path("content").asText();
+            String json = text.trim()
+                    .replaceAll("^```json\\s*", "")
+                    .replaceAll("^```\\s*", "")
+                    .replaceAll("```\\s*$", "")
+                    .trim();
+
+            JsonNode result = objectMapper.readTree(json);
+            boolean valid = result.path("valid").asBoolean(true);
+            if (!valid) {
+                log.warn("검증 실패 이유: {}", result.path("reason").asText());
+            }
+            return valid;
+        } catch (Exception e) {
+            // 검증 자체가 실패하면 안전하게 통과시킴 (과도한 폐기 방지)
+            log.warn("정답 검증 호출 실패, 통과 처리. question={}", quiz.getQuestion());
+            return true;
         }
     }
 
@@ -113,7 +187,11 @@ public class OpenAIQuizClient {
             ## 좋은 퀴즈 기준
             - 금리·환율·증시·부동산 등 경제 원리나 개념을 학습할 수 있는 문제
             - 기사가 계기가 되어 독자가 경제 지식을 넓힐 수 있는 문제
-            - 예시: "금리가 오를 때 채권 가격은 어떻게 되는가?", "환율이 상승하면 수출에 미치는 영향은?"
+
+            ## 정답 검증 (출제 후 반드시 수행)
+            정답 보기를 확정하기 전, 다음을 자문하세요:
+            "이 정답은 경제학 교과서 기준으로 반박의 여지 없이 옳은가?"
+            조금이라도 불확실하면 해당 문제를 만들지 말고 다른 각도로 출제하거나 SKIP하세요.
 
             ## 응답 형식 (반드시 JSON만, 다른 텍스트 절대 금지)
 
@@ -148,6 +226,7 @@ public class OpenAIQuizClient {
             - 이 기사가 계기가 되어 독자가 경제 원리를 배울 수 있는 방향으로 출제하세요
             - 오답 보기는 그럴듯하지만 명확히 틀린 내용이어야 합니다
             - 한국어로 작성하세요
+            - 문제에 경제 변수를 사용할 때는 반드시 방향을 명시하세요 (예: "환율이 상승하면", "금리가 인하되면"). "환율 변동" 같은 방향성 없는 표현은 사용하지 마세요
             """.formatted(title, content);
     }
 }
