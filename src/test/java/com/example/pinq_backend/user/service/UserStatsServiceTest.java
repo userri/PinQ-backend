@@ -8,9 +8,9 @@ import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
+import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.lang.reflect.Field;
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +27,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *  1. 풀이 이력이 여러 날 있을 때 totalSolved / correctRate 가 올바르게 합산되는지
  *  2. 풀이 이력이 전혀 없을 때 correctRate 가 0 (0-division 방어)
  *  3. activityGrid 가 56개이고 index 방향이 올바른지 (index 0 = 55일 전, index 55 = 오늘)
- *  4. activityGrid 에서 solved_count=0 인 날은 false 로 처리되는지
+ *  4. activityGrid 에서 정답 수가 MAX_INTENSITY(4) 이상이면 4로 고정되는지
+ *  5. 활동 없는 날은 0이다
  */
 @ExtendWith(MockitoExtension.class)
 class UserStatsServiceTest {
@@ -38,11 +39,12 @@ class UserStatsServiceTest {
     @Mock
     private SolvedHistoryRepository solvedHistoryRepository;
 
+    @Mock
+    private UserQuizAttemptRepository userQuizAttemptRepository;
+
     @InjectMocks
     private UserStatsService userStatsService;
 
-    // Clock.fixed() 로 고정해 LocalDate.now(clock) 이 항상 TODAY 를 반환하도록 한다.
-    // LocalDate.now() 를 그대로 쓰면 실행 시점마다 결과가 달라지는 flaky test 가 된다.
     private static final LocalDate TODAY = LocalDate.of(2026, 5, 14);
     private static final Clock FIXED_CLOCK =
         Clock.fixed(TODAY.atStartOfDay(AppConfig.KST).toInstant(), AppConfig.KST);
@@ -51,7 +53,6 @@ class UserStatsServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Clock 필드는 @Mock 대상이 아니므로 reflection 으로 직접 주입한다.
         setField(userStatsService, "clock", FIXED_CLOCK);
 
         demoUser = User.builder()
@@ -69,13 +70,13 @@ class UserStatsServiceTest {
     void getStats_aggregatesHistoryCorrectly() {
         SolvedHistory day1 = historyOf(TODAY.minusDays(2), 4, 3);
         SolvedHistory day2 = historyOf(TODAY.minusDays(1), 4, 2);
-        SolvedHistory day3 = historyOf(TODAY,              4, 4);
+        SolvedHistory day3 = historyOf(TODAY, 4, 4);
         List<SolvedHistory> all = List.of(day1, day2, day3);
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(all);
-        given(solvedHistoryRepository.findByUserIdAndSolvedDateBetween(
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(all);
+        ).willReturn(List.of());
 
         UserStatsResponse result = userStatsService.getStats();
 
@@ -88,7 +89,7 @@ class UserStatsServiceTest {
     @DisplayName("풀이 이력이 없으면 correctRate 는 0, totalSolved 는 0 이다")
     void getStats_zeroHistory_correctRateIsZero() {
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(solvedHistoryRepository.findByUserIdAndSolvedDateBetween(
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 
@@ -101,35 +102,49 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("activityGrid 는 56개이고 index 0 이 55일 전, index 55 가 오늘이다")
     void getStats_activityGrid_sizeAndDirection() {
-        SolvedHistory todayHistory  = historyOf(TODAY, 1, 1);
-        SolvedHistory oldestHistory = historyOf(TODAY.minusDays(55), 1, 0);
+        // 오늘: 정답 2개 / 55일 전: 정답 1개
+        Object[] todayRow   = new Object[]{TODAY,                 2L};
+        Object[] oldestRow  = new Object[]{TODAY.minusDays(55),  1L};
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(solvedHistoryRepository.findByUserIdAndSolvedDateBetween(
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.of(todayHistory, oldestHistory));
+        ).willReturn(List.of(todayRow, oldestRow));
 
         UserStatsResponse result = userStatsService.getStats();
 
         assertThat(result.activityGrid()).hasSize(56);
-        assertThat(result.activityGrid().get(55)).isTrue();   // 오늘
-        assertThat(result.activityGrid().get(0)).isTrue();    // 55일 전
-        assertThat(result.activityGrid().get(1)).isFalse();   // 54일 전 — 기록 없음
+        assertThat(result.activityGrid().get(55)).isEqualTo(2);  // 오늘
+        assertThat(result.activityGrid().get(0)).isEqualTo(1);   // 55일 전
+        assertThat(result.activityGrid().get(1)).isEqualTo(0);   // 54일 전 — 기록 없음
     }
 
     @Test
-    @DisplayName("solved_count=0 인 날은 activityGrid 에서 false 다")
-    void getStats_activityGrid_zeroSolvedCountIsFalse() {
-        SolvedHistory emptyDay = historyOf(TODAY, 0, 0);
+    @DisplayName("정답 수가 4 이상이면 강도는 4로 고정된다")
+    void getStats_activityGrid_intensityCapAt4() {
+        Object[] row = new Object[]{TODAY, 10L};  // 10개 정답 → 4로 고정
 
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of(emptyDay));
-        given(solvedHistoryRepository.findByUserIdAndSolvedDateBetween(
+        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.of(emptyDay));
+        ).willReturn(List.of(row));
 
         UserStatsResponse result = userStatsService.getStats();
 
-        assertThat(result.activityGrid().get(55)).isFalse();
+        assertThat(result.activityGrid().get(55)).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("활동이 없는 날은 activityGrid 에서 0 이다")
+    void getStats_activityGrid_noActivityIsZero() {
+        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.of());
+
+        UserStatsResponse result = userStatsService.getStats();
+
+        assertThat(result.activityGrid()).allMatch(v -> v == 0);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

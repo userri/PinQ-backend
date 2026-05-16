@@ -28,11 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
  *  1. 성공 시 응답 shape (streak / totalSolved / correctRate / activityGrid 필드명·타입)
  *  2. demo 유저 미존재 시 503 반환
  *
- * 피드백 반영 범위 메모:
- *  - "demo user missing → 에러 경로" 테스트를 추가하려면 GlobalExceptionHandler 가
- *    IllegalStateException 을 먼저 처리해야 한다. 핸들러 미등록 상태에서 테스트만 추가하면
- *    500 을 검증하는 무의미한 테스트가 되므로, GlobalExceptionHandler 수정을 선행한 뒤
- *    이 테스트를 작성했다.
+ * activityGrid 는 Integer 값 (0~4 강도) 배열이다.
+ *  - 0: 활동 없음
+ *  - 1~4: 해당 날 처음 시도에서 맞힌 문제 수 (4 이상은 4로 고정)
  */
 @WebMvcTest(UserStatsController.class)
 @Import(GlobalExceptionHandler.class)
@@ -49,9 +47,9 @@ class UserStatsControllerTest {
     @Test
     @DisplayName("GET /api/users/me/stats 는 200 과 통계 응답 shape 을 반환한다")
     void getMyStats_returnsJson() throws Exception {
-        // activityGrid: 56개 — 앞 55일 false, 오늘(index 55) true
-        List<Boolean> grid = new ArrayList<>(Collections.nCopies(55, false));
-        grid.add(true);
+        // activityGrid: 56개 — 앞 55일 0(활동 없음), 오늘(index 55) 3(정답 3개)
+        List<Integer> grid = new ArrayList<>(Collections.nCopies(55, 0));
+        grid.add(3);
 
         given(userStatsService.getStats()).willReturn(
             new UserStatsResponse(3, 12, 0.75f, grid)
@@ -64,8 +62,8 @@ class UserStatsControllerTest {
             .andExpect(jsonPath("$.correctRate").value(0.75))
             .andExpect(jsonPath("$.activityGrid").isArray())
             .andExpect(jsonPath("$.activityGrid.length()").value(56))
-            .andExpect(jsonPath("$.activityGrid[55]").value(true))
-            .andExpect(jsonPath("$.activityGrid[0]").value(false));
+            .andExpect(jsonPath("$.activityGrid[55]").value(3))
+            .andExpect(jsonPath("$.activityGrid[0]").value(0));
     }
 
     @Test
