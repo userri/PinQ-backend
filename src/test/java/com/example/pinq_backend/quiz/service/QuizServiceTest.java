@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -62,8 +63,9 @@ class QuizServiceTest {
     @BeforeEach
     void setUp() {
         // Clock.instant() / Clock.getZone() 위임 — LocalDate.now(clock) 이 TODAY 를 반환하도록
-        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
-        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        // lenient: checkAnswer 테스트처럼 clock 을 사용하지 않는 케이스에서 UnnecessaryStubbingException 방지
+        lenient().when(clock.instant()).thenReturn(FIXED_CLOCK.instant());
+        lenient().when(clock.getZone()).thenReturn(FIXED_CLOCK.getZone());
     }
 
     @Test
