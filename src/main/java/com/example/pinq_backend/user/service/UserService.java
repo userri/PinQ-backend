@@ -33,21 +33,30 @@ public class UserService {
     /**
      * 퀴즈 한 문제를 채점할 때마다 호출.
      *  - User.currentStreak 갱신
-     *  - SolvedHistory 일별 집계 upsert
+     *  - SolvedHistory 일별 집계 upsert (명시적 save 로 dirty checking 의존 제거)
      */
     @Transactional
     public void recordAnswer(boolean isCorrect) {
-        User user = findOrCreateDemoUser();
+        User user = userRepository.findByNickname(DEMO_NICKNAME)
+            .orElseGet(() -> userRepository.save(
+                User.builder()
+                    .nickname(DEMO_NICKNAME)
+                    .currentStreak(0)
+                    .maxStreak(0)
+                    .build()
+            ));
         LocalDate today = LocalDate.now(clock);
 
         // 스트릭 갱신 (오늘 이미 기록됐으면 내부에서 무시)
         user.recordSolvedOn(today);
+        userRepository.save(user);  // streak 변경 명시적 flush
 
-        // 일별 집계 upsert
+        // 일별 집계 upsert — 신규 row 와 기존 row 모두 save() 로 확실히 반영
         SolvedHistory history = solvedHistoryRepository
             .findByUserIdAndSolvedDate(user.getId(), today)
-            .orElseGet(() -> solvedHistoryRepository.save(SolvedHistory.create(user, today)));
+            .orElseGet(() -> SolvedHistory.create(user, today));
         history.record(isCorrect);
+        solvedHistoryRepository.save(history);  // INSERT or UPDATE
     }
 
     /**
