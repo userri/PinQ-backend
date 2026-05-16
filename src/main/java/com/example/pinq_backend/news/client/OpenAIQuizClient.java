@@ -86,6 +86,11 @@ public class OpenAIQuizClient {
      * 생성 호출과 컨텍스트를 완전히 분리하여,
      * AI가 자신의 이전 답변에 bias 없이 순수하게 경제 사실만 판단하게 한다.
      *
+     * 전체 보기를 포함하여 검증한다.
+     * 정답 보기만 전달하면 다른 보기가 경제학적으로 동등하게 옳더라도
+     * 검증을 통과하는 문제가 있으므로, 모든 보기를 제공하고
+     * "의미상 옳은 보기가 정확히 하나" 임을 조건으로 요구한다.
+     *
      * @return true면 정답 신뢰 가능, false면 폐기
      */
     private boolean verifyAnswer(GeneratedQuizDto quiz) {
@@ -95,17 +100,39 @@ public class OpenAIQuizClient {
                 .findFirst()
                 .orElse("");
 
+        // 전체 보기 목록을 번호와 함께 구성
+        StringBuilder choicesTextBuilder = new StringBuilder();
+        for (int i = 0; i < quiz.getChoices().size(); i++) {
+            GeneratedQuizDto.ChoiceDto choice = quiz.getChoices().get(i);
+            choicesTextBuilder.append(i + 1)
+                    .append(". ")
+                    .append(choice.getContent());
+            if (i < quiz.getChoices().size() - 1) {
+                choicesTextBuilder.append("\n");
+            }
+        }
+        String choicesText = choicesTextBuilder.toString();
+
         String verifyPrompt = """
-                다음 경제 퀴즈의 정답이 경제학적으로 올바른지 판단하세요.
+                다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
                 이전 맥락 없이 오직 경제 지식만으로 판단하세요.
 
                 문제: %s
+
+                전체 보기:
+                %s
+
                 정답으로 표시된 보기: %s
 
-                이 정답이 경제학 교과서 기준으로 명확히 옳으면 {"valid": true},
-                틀렸거나 불확실하면 {"valid": false, "reason": "이유"} 를 반환하세요.
+                검증 기준:
+                1. 전체 보기 중 경제학 교과서 기준으로 의미상 명확히 옳은 보기가 정확히 하나여야 합니다.
+                2. 그 유일하게 옳은 보기가 정답으로 표시된 보기와 같아야 합니다.
+                3. 두 개 이상 옳거나, 정답이 틀렸거나, 불확실하면 valid는 false입니다.
+
+                위 기준을 모두 만족하면 {"valid": true},
+                만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """.formatted(quiz.getQuestion(), answerContent);
+                """.formatted(quiz.getQuestion(), choicesText, answerContent);
 
         try {
             Map<String, Object> requestBody = Map.of(
