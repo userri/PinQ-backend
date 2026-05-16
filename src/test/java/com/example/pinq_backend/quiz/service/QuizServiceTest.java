@@ -3,6 +3,7 @@ package com.example.pinq_backend.quiz.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
@@ -70,7 +71,7 @@ class QuizServiceTest {
     void checkAnswer_correct() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "증시 문제", 2);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
-        doNothing().when(userService).recordAnswer(anyBoolean());
+        doNothing().when(userService).recordAnswer(anyLong(), anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 2L);
 
@@ -90,7 +91,7 @@ class QuizServiceTest {
     void checkAnswer_wrong() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.REAL_ESTATE, "부동산 문제", 3);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
-        doNothing().when(userService).recordAnswer(anyBoolean());
+        doNothing().when(userService).recordAnswer(anyLong(), anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 1L);
 
@@ -122,6 +123,6 @@ class QuizServiceTest {
             .hasMessageContaining("1");
 
         // 통계가 기록되지 않아야 한다
-        verify(userService, never()).recordAnswer(anyBoolean());
+        verify(userService, never()).recordAnswer(anyLong(), anyBoolean());
     }
 }
