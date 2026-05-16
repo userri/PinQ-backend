@@ -23,13 +23,17 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(
-    name = "users",
-    uniqueConstraints = {
-        @UniqueConstraint(
-            name = "uk_user_oauth",
-            columnNames = {"oauth_provider", "oauth_id"}
-        )
-    }
+        name = "users",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_user_oauth",
+                        columnNames = {"oauth_provider", "oauth_id"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_user_nickname",
+                        columnNames = {"nickname"}
+                )
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -60,12 +64,12 @@ public class User extends BaseTimeEntity {
 
     @Builder
     private User(
-        String oauthProvider,
-        String oauthId,
-        String nickname,
-        int currentStreak,
-        int maxStreak,
-        LocalDate lastSolvedDate
+            String oauthProvider,
+            String oauthId,
+            String nickname,
+            int currentStreak,
+            int maxStreak,
+            LocalDate lastSolvedDate
     ) {
         this.oauthProvider = oauthProvider;
         this.oauthId = oauthId;
