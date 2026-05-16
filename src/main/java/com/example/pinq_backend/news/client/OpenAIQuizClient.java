@@ -33,9 +33,9 @@ public class OpenAIQuizClient {
         this.props = props;
         this.objectMapper = objectMapper;
         this.restClient = RestClient.builder()
-            .defaultHeader("Authorization", "Bearer " + props.apiKey())
-            .defaultHeader("Content-Type", "application/json")
-            .build();
+                .defaultHeader("Authorization", "Bearer " + props.apiKey())
+                .defaultHeader("Content-Type", "application/json")
+                .build();
     }
 
     /**
@@ -47,20 +47,20 @@ public class OpenAIQuizClient {
      */
     public Optional<GeneratedQuizDto> generateQuiz(String title, String content) {
         Map<String, Object> requestBody = Map.of(
-            "model", props.model(),
-            "max_tokens", MAX_TOKENS,
-            "messages", List.of(
-                Map.of("role", "system", "content", systemPrompt()),
-                Map.of("role", "user", "content", userPrompt(title, content))
-            )
+                "model", props.model(),
+                "max_tokens", MAX_TOKENS,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt()),
+                        Map.of("role", "user", "content", userPrompt(title, content))
+                )
         );
 
         try {
             String rawResponse = restClient.post()
-                .uri(OPENAI_API_URL)
-                .body(requestBody)
-                .retrieve()
-                .body(String.class);
+                    .uri(OPENAI_API_URL)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
 
             return parseQuiz(rawResponse);
         } catch (Exception e) {
@@ -76,10 +76,10 @@ public class OpenAIQuizClient {
 
             // 코드블록이 붙을 수 있어 제거
             String json = text.trim()
-                .replaceAll("^```json\\s*", "")
-                .replaceAll("^```\\s*", "")
-                .replaceAll("```\\s*$", "")
-                .trim();
+                    .replaceAll("^```json\\s*", "")
+                    .replaceAll("^```\\s*", "")
+                    .replaceAll("```\\s*$", "")
+                    .trim();
 
             GeneratedQuizDto quiz = objectMapper.readValue(json, GeneratedQuizDto.class);
 
@@ -118,7 +118,7 @@ public class OpenAIQuizClient {
             ## 응답 형식 (반드시 JSON만, 다른 텍스트 절대 금지)
 
             SKIP인 경우:
-            {"skip": true, "skipReason": "부적합 이유 한 줄"}
+            {"skip": true, "skipReason": "특정 인물의 발언을 묻는 내용으로 경제 개념 학습과 무관함"}
 
             퀴즈 생성인 경우:
             {
