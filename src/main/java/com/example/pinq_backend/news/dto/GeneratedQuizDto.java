@@ -1,5 +1,7 @@
 package com.example.pinq_backend.news.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.List;
 
 /**
@@ -23,6 +25,7 @@ public class GeneratedQuizDto {
     public static class ChoiceDto {
         private int orderNum;
         private String content;
+        @JsonProperty("isAnswer")
         private boolean isAnswer;
 
         public ChoiceDto() {}
