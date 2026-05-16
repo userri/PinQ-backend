@@ -2,14 +2,18 @@ package com.example.pinq_backend.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.example.pinq_backend.config.AppConfig;
 import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
+import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
+import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.lang.reflect.Field;
 import java.time.Clock;
@@ -55,6 +59,9 @@ class UserServiceTest {
     @Mock
     private SolvedHistoryRepository solvedHistoryRepository;
 
+    @Mock
+    private UserQuizAttemptRepository userQuizAttemptRepository;
+
     @InjectMocks
     private UserService userService;
 
@@ -62,12 +69,20 @@ class UserServiceTest {
     private static final LocalDate YESTERDAY = TODAY.minusDays(1);
     private static final LocalDate TWO_DAYS_AGO = TODAY.minusDays(2);
 
+    /** 기본 quizId. 첫 시도 시나리오에 사용. */
+    private static final Long QUIZ_1 = 10L;
+    private static final Long QUIZ_2 = 20L;
+
     private static final Clock FIXED_CLOCK =
         Clock.fixed(TODAY.atStartOfDay(AppConfig.KST).toInstant(), AppConfig.KST);
 
     @BeforeEach
     void injectClock() {
         setField(userService, "clock", FIXED_CLOCK);
+        // 기본값: 어떤 quizId 든 첫 시도 (existsByUserIdAndQuizId=false).
+        // 중복 시도 시나리오에서는 개별 테스트에서 override.
+        lenient().when(userQuizAttemptRepository.existsByUserIdAndQuizId(anyLong(), anyLong()))
+            .thenReturn(false);
     }
 
     // ── findDemoUser ──────────────────────────────────────────────────────────
@@ -110,9 +125,10 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory created = stubNoHistoryToday(user);
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_1, true);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(userQuizAttemptRepository).save(any(UserQuizAttempt.class));
         assertThat(created.getSolvedCount()).isEqualTo(1);
         assertThat(created.getCorrectCount()).isEqualTo(1);
     }
@@ -124,7 +140,7 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory created = stubNoHistoryToday(user);
 
-        userService.recordAnswer(false);
+        userService.recordAnswer(QUIZ_1, false);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(created.getSolvedCount()).isEqualTo(1);
@@ -132,13 +148,13 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("오늘 추가 정답: 기존 SolvedHistory 에 solved+1 / correct+1 누적, save 미호출")
-    void recordAnswer_additionalAnswerToday_correct() {
+    @DisplayName("오늘 다른 문제 추가 정답: 기존 SolvedHistory 에 solved+1 / correct+1 누적, save 미호출")
+    void recordAnswer_additionalAnswerToday_correct_differentQuiz() {
         User user = demoUser(1L, 1, TODAY);
         stubExistingUser(user);
         SolvedHistory existing = existingHistoryToday(user, 2, 1); // 기존: 2풀이 1정답
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_2, true);  // 새 문제
 
         verify(solvedHistoryRepository, never()).save(any());
         assertThat(existing.getSolvedCount()).isEqualTo(3);
@@ -146,17 +162,35 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("오늘 추가 오답: 기존 SolvedHistory 에 solved+1 / correct 불변 누적, save 미호출")
-    void recordAnswer_additionalAnswerToday_wrong() {
+    @DisplayName("오늘 다른 문제 추가 오답: 기존 SolvedHistory 에 solved+1 / correct 불변 누적, save 미호출")
+    void recordAnswer_additionalAnswerToday_wrong_differentQuiz() {
         User user = demoUser(1L, 1, TODAY);
         stubExistingUser(user);
         SolvedHistory existing = existingHistoryToday(user, 2, 2); // 기존: 2풀이 2정답
 
-        userService.recordAnswer(false);
+        userService.recordAnswer(QUIZ_2, false);  // 새 문제
 
         verify(solvedHistoryRepository, never()).save(any());
         assertThat(existing.getSolvedCount()).isEqualTo(3);
         assertThat(existing.getCorrectCount()).isEqualTo(2); // 오답이므로 correct 불변
+    }
+
+    @Test
+    @DisplayName("같은 문제 재시도: 통계와 스트릭 모두 변하지 않고 조기 종료")
+    void recordAnswer_duplicateAttempt_skipsAllUpdates() {
+        User user = demoUser(1L, 3, TODAY);
+        stubExistingUser(user);
+        // 같은 quizId 가 이미 시도된 상태
+        given(userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), QUIZ_1))
+            .willReturn(true);
+
+        userService.recordAnswer(QUIZ_1, true);
+
+        // 통계·시도·스트릭 어떤 것도 갱신되지 않아야 한다
+        verify(userQuizAttemptRepository, never()).save(any());
+        verify(solvedHistoryRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
+        assertThat(user.getCurrentStreak()).isEqualTo(3);
     }
 
     // ── recordAnswer — streak ─────────────────────────────────────────────────
@@ -168,7 +202,7 @@ class UserServiceTest {
         stubExistingUser(user);
         stubNoHistoryToday(user);
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_1, true);
 
         assertThat(user.getCurrentStreak()).isEqualTo(1);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -181,7 +215,7 @@ class UserServiceTest {
         stubExistingUser(user);
         stubNoHistoryToday(user);
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_1, true);
 
         assertThat(user.getCurrentStreak()).isEqualTo(4);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -194,20 +228,20 @@ class UserServiceTest {
         stubExistingUser(user);
         stubNoHistoryToday(user);
 
-        userService.recordAnswer(false);
+        userService.recordAnswer(QUIZ_1, false);
 
         assertThat(user.getCurrentStreak()).isEqualTo(1);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
     }
 
     @Test
-    @DisplayName("오늘 이미 풀었으면 streak 가 변하지 않는다")
+    @DisplayName("오늘 다른 문제를 추가로 풀어도 streak 는 변하지 않는다")
     void recordAnswer_alreadySolvedToday_streakUnchanged() {
         User user = demoUser(1L, 2, TODAY); // 오늘 이미 기록됨
         stubExistingUser(user);
         existingHistoryToday(user, 1, 1);
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_2, true);  // 같은 날 새 문제
 
         assertThat(user.getCurrentStreak()).isEqualTo(2); // 변화 없음
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -223,7 +257,7 @@ class UserServiceTest {
         given(userRepository.save(any(User.class))).willReturn(created);
         SolvedHistory newHistory = stubNoHistoryToday(created);
 
-        userService.recordAnswer(true);
+        userService.recordAnswer(QUIZ_1, true);
 
         // 유저 생성 확인
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
