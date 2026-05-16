@@ -119,7 +119,10 @@ public class QuizGenerationService {
             if (content.isBlank()) continue;
 
             Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(title, content);
-            if (quizOpt.isEmpty()) continue;
+            if (quizOpt.isEmpty()) {
+                log.info("기사 건너뜀 (SKIP 또는 생성 실패). category={}, title={}", category, title);
+                continue;
+            }
 
             GeneratedQuizDto dto = quizOpt.get();
             if (!isValidQuiz(dto)) {
