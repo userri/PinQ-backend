@@ -82,6 +82,12 @@ public class OpenAIQuizClient {
                 .trim();
 
             GeneratedQuizDto quiz = objectMapper.readValue(json, GeneratedQuizDto.class);
+
+            if (quiz.isSkip()) {
+                log.info("OpenAI가 기사 SKIP 판정. 이유: {}", quiz.getSkipReason());
+                return Optional.empty();
+            }
+
             return Optional.of(quiz);
         } catch (Exception e) {
             log.error("OpenAI 응답 파싱 실패. response={}", rawResponse, e);
@@ -91,32 +97,55 @@ public class OpenAIQuizClient {
 
     private String systemPrompt() {
         return """
-            당신은 경제·금융 퀴즈 출제 전문가입니다.
-            반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요.
+            당신은 경제·금융 개념 교육용 퀴즈 출제 전문가입니다.
+
+            ## 역할
+            뉴스 기사를 보고 ① 퀴즈 출제 적합 여부를 먼저 판단한 뒤,
+            ② 적합하면 경제 개념 중심의 퀴즈를 만들고, 부적합하면 SKIP을 반환합니다.
+
+            ## SKIP 기준 (아래 중 하나라도 해당하면 SKIP)
+            - 특정 기업·브랜드·상품을 홍보하는 내용 (예: "A사의 신제품 특징은?")
+            - 특정 인물의 발언·의견·전망을 묻는 내용 (예: "○○ 회장이 말한 것은?")
+            - 독자에게 생소할 수 있는 전문 고유명사·약어가 설명 없이 핵심으로 사용된 내용 (예: KDDX, 특정 법안 번호 등)
+            - 사건의 단순 수치(인원수, 날짜, 금액)를 묻는 내용
+            - 사설·칼럼 등 필자의 주관적 분석이 주를 이루는 기사
+
+            ## 좋은 퀴즈 기준
+            - 금리·환율·증시·부동산 등 경제 원리나 개념을 학습할 수 있는 문제
+            - 기사가 계기가 되어 독자가 경제 지식을 넓힐 수 있는 문제
+            - 예시: "금리가 오를 때 채권 가격은 어떻게 되는가?", "환율이 상승하면 수출에 미치는 영향은?"
+
+            ## 응답 형식 (반드시 JSON만, 다른 텍스트 절대 금지)
+
+            SKIP인 경우:
+            {"skip": true, "skipReason": "부적합 이유 한 줄"}
+
+            퀴즈 생성인 경우:
             {
-              "question": "퀴즈 문제",
+              "skip": false,
+              "question": "퀴즈 문제 (개념을 묻는 질문)",
               "choices": [
                 {"orderNum": 1, "content": "보기1", "isAnswer": false},
                 {"orderNum": 2, "content": "보기2", "isAnswer": true},
                 {"orderNum": 3, "content": "보기3", "isAnswer": false},
                 {"orderNum": 4, "content": "보기4", "isAnswer": false}
               ],
-              "explanation": "정답 해설 (2~3문장)",
-              "keyword": "핵심 경제 용어: 한 줄 설명"
+              "explanation": "정답 해설. 해당 경제 개념을 쉽게 풀어서 설명 (2~3문장)",
+              "keyword": "핵심 경제 용어: 한 줄 개념 설명"
             }
             """;
     }
 
     private String userPrompt(String title, String content) {
         return """
-            다음 뉴스 기사를 바탕으로 4지선다 퀴즈 1개를 만들어주세요.
+            다음 뉴스 기사를 검토하고, SKIP 여부를 먼저 판단한 뒤 퀴즈를 출제하거나 SKIP을 반환하세요.
 
             뉴스 제목: %s
             뉴스 내용: %s
 
-            요구사항:
-            - 문제는 뉴스 내용에서 직접 답할 수 있어야 합니다
-            - 정답은 choices 중 하나에만 isAnswer: true, 나머지는 false
+            퀴즈 출제 시 주의사항:
+            - 문제는 뉴스의 특정 사실(숫자, 인명, 고유명사)이 아닌 경제 '개념'을 묻어야 합니다
+            - 이 기사가 계기가 되어 독자가 경제 원리를 배울 수 있는 방향으로 출제하세요
             - 오답 보기는 그럴듯하지만 명확히 틀린 내용이어야 합니다
             - 한국어로 작성하세요
             """.formatted(title, content);
