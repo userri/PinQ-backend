@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.config.AppConfig;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.dto.AnswerResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse;
@@ -18,8 +19,11 @@ import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.user.service.UserService;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,14 +49,29 @@ class QuizServiceTest {
     @Mock
     private UserService userService;
 
+    @Mock
+    private Clock clock;
+
     @InjectMocks
     private QuizService quizService;
+
+    private static final LocalDate TODAY = LocalDate.of(2026, 5, 14);
+    private static final Clock FIXED_CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(AppConfig.KST).toInstant(), AppConfig.KST);
+
+    @BeforeEach
+    void setUp() {
+        // Clock.instant() / Clock.getZone() 위임 — LocalDate.now(clock) 이 TODAY 를 반환하도록
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+    }
 
     @Test
     @DisplayName("오늘의 퀴즈 목록을 반환한다 — category 는 article 에서 파생")
     void getTodayQuizzes_returnsListWithCategoryFromArticle() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
+        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
         given(quizRepository.findAllByOrderByIdAsc()).willReturn(List.of(q1, q2));
 
         List<QuizResponse> result = quizService.getTodayQuizzes();
@@ -106,8 +125,8 @@ class QuizServiceTest {
         given(quizRepository.findById(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> quizService.checkAnswer(999L, 1L))
-            .isInstanceOf(QuizNotFoundException.class)
-            .hasMessageContaining("999");
+                .isInstanceOf(QuizNotFoundException.class)
+                .hasMessageContaining("999");
     }
 
     @Test
@@ -116,13 +135,11 @@ class QuizServiceTest {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "증시 문제", 2);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
-        // choiceId=9999 는 이 퀴즈의 보기(1~4)에 속하지 않음
         assertThatThrownBy(() -> quizService.checkAnswer(1L, 9999L))
-            .isInstanceOf(InvalidChoiceException.class)
-            .hasMessageContaining("9999")
-            .hasMessageContaining("1");
+                .isInstanceOf(InvalidChoiceException.class)
+                .hasMessageContaining("9999")
+                .hasMessageContaining("1");
 
-        // 통계가 기록되지 않아야 한다
         verify(userService, never()).recordAnswer(anyLong(), anyBoolean());
     }
 }
