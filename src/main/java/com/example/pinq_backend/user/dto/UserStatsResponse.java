@@ -11,6 +11,7 @@ import java.util.List;
  *   강도 단계: 0(없음) / 1(1개) / 2(2개) / 3(3개) / 4(4개 이상)
  */
 public record UserStatsResponse(
+    String nickname,
     int streak,
     int totalSolved,
     float correctRate,
