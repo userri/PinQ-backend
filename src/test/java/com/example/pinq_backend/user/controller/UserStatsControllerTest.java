@@ -52,7 +52,7 @@ class UserStatsControllerTest {
         grid.add(3);
 
         given(userStatsService.getStats()).willReturn(
-            new UserStatsResponse(3, 12, 0.75f, grid)
+            new UserStatsResponse("테스트유저", 3, 12, 0.75f, grid)
         );
 
         mockMvc.perform(get("/api/users/me/stats"))
