@@ -40,8 +40,8 @@ public class DataInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (quizRepository.count() > 0) {
-            log.info("[DataInitializer] 퀴즈 데이터가 이미 존재합니다. 시드 건너뜀.");
+        if (quizRepository.countByQuizDate(null) > 0) {
+            log.info("[DataInitializer] 시드 데이터(quizDate=null)가 이미 존재합니다. 시드 건너뜀.");
             return;
         }
         List<NewsArticle> articles = seedArticles();
