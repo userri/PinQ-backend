@@ -1,16 +1,15 @@
 package com.example.pinq_backend.user.controller;
 
-import static org.mockito.BDDMockito.given;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.quiz.exception.GlobalExceptionHandler;
+import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
+import com.example.pinq_backend.user.service.UserService;
 import com.example.pinq_backend.user.service.UserStatsService;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +19,12 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * UserStatsController HTTP 계층 검증.
@@ -43,6 +48,19 @@ class UserStatsControllerTest {
 
     @MockitoBean
     private UserStatsService userStatsService;
+
+    @MockitoBean
+    private UserService userService;
+
+    @MockitoBean
+    private JwtTokenProvider jwtTokenProvider;
+
+    @BeforeEach
+    void setUp() {
+        User demoUser = mock(User.class);
+        given(demoUser.getId()).willReturn(1L);
+        given(userService.findDemoUser()).willReturn(demoUser);
+    }
 
     @Test
     @DisplayName("GET /api/users/me/stats 는 200 과 통계 응답 shape 을 반환한다")

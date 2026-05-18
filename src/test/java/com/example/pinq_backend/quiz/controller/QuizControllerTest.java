@@ -6,6 +6,7 @@ import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse.ChoiceResponse;
 import com.example.pinq_backend.quiz.exception.GlobalExceptionHandler;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
+import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.quiz.service.QuizService;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.service.UserService;
@@ -51,6 +52,9 @@ class QuizControllerTest {
 
     @MockitoBean
     private UserService userService;
+
+    @MockitoBean
+    private JwtTokenProvider jwtTokenProvider;
 
     @BeforeEach
     void setUp() {
