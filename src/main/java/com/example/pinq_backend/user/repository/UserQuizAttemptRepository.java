@@ -24,19 +24,18 @@ public interface UserQuizAttemptRepository extends JpaRepository<UserQuizAttempt
     /**
      * 날짜 범위 내 각 날짜별 처음 시도 정답 수를 집계한다.
      *
-     * UserQuizAttempt.createdAt(BaseTimeEntity) 기준으로 날짜를 구한다.
-     * firstCorrect=true 인 행만 카운트 → 해당 날 첫 시도에서 맞힌 문제 수.
-     *
-     * 반환: [날짜(LocalDate), 정답수(Long)] 형태의 Object[] 리스트.
+     * Native query 사용 — JPQL CAST AS localdate 는 Hibernate 전용 확장이므로
+     * Dialect 의존성 제거를 위해 DATE() 함수 기반 native SQL 로 작성.
+     * 반환: [DATE(java.sql.Date), COUNT(Number)] 형태의 Object[] 리스트.
      */
-    @Query("""
-        SELECT CAST(a.createdAt AS localdate), COUNT(a)
-        FROM UserQuizAttempt a
-        WHERE a.user.id = :userId
-          AND a.firstCorrect = true
-          AND CAST(a.createdAt AS localdate) BETWEEN :from AND :to
-        GROUP BY CAST(a.createdAt AS localdate)
-        """)
+    @Query(value = """
+        SELECT DATE(a.created_at), COUNT(*)
+        FROM user_quiz_attempt a
+        WHERE a.user_id = :userId
+          AND a.first_correct = true
+          AND DATE(a.created_at) BETWEEN :from AND :to
+        GROUP BY DATE(a.created_at)
+        """, nativeQuery = true)
     List<Object[]> countFirstCorrectByDateBetween(
         @Param("userId") Long userId,
         @Param("from") LocalDate from,
@@ -46,22 +45,27 @@ public interface UserQuizAttemptRepository extends JpaRepository<UserQuizAttempt
     /**
      * 날짜 범위 내 각 날짜별 첫 시도 수를 집계한다 (정답 여부 무관).
      *
-     * 오답만 있는 날도 활동으로 인정하여 activityGrid 히트맵에 표시하기 위해 사용.
-     *
-     * 반환: [날짜(LocalDate), 시도수(Long)] 형태의 Object[] 리스트.
+     * Native query 사용 — 위 countFirstCorrectByDateBetween 과 동일한 이유.
+     * 반환: [DATE(java.sql.Date), COUNT(Number)] 형태의 Object[] 리스트.
      */
-    @Query("""
-        SELECT CAST(a.createdAt AS localdate), COUNT(a)
-        FROM UserQuizAttempt a
-        WHERE a.user.id = :userId
-          AND CAST(a.createdAt AS localdate) BETWEEN :from AND :to
-        GROUP BY CAST(a.createdAt AS localdate)
-        """)
+    @Query(value = """
+        SELECT DATE(a.created_at), COUNT(*)
+        FROM user_quiz_attempt a
+        WHERE a.user_id = :userId
+          AND DATE(a.created_at) BETWEEN :from AND :to
+        GROUP BY DATE(a.created_at)
+        """, nativeQuery = true)
     List<Object[]> countAttemptsByDateBetween(
         @Param("userId") Long userId,
         @Param("from") LocalDate from,
         @Param("to") LocalDate to
     );
+
+    /**
+     * 특정 quizId 목록에 속하는 attempt 만 조회한다.
+     * 전체 attempt 를 로드한 뒤 필터링하는 방식 대비 I/O 절감.
+     */
+    List<UserQuizAttempt> findByUserIdAndQuizIdIn(Long userId, List<Long> quizIds);
 
     @Modifying
     @Query("DELETE FROM UserQuizAttempt a WHERE a.user.id = :userId")
