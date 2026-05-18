@@ -235,12 +235,27 @@ public class UserService {
 
     /**
      * 닉네임이 이미 존재하면 뒤에 짧은 UUID suffix 를 붙여 고유하게 만든다.
+     *
+     * DB 컬럼 길이 30자 제한:
+     *   suffix "_XXXX" = 5자 → base 는 최대 25자로 잘라야 총 30자 이하.
+     * 동시 가입 경합 대비 최대 5회 재시도.
      */
     private String makeUniqueNickname(String base) {
-        String candidate = base.length() > 28 ? base.substring(0, 28) : base;
-        if (userRepository.findByNickname(candidate).isEmpty()) {
-            return candidate;
+        // suffix "_XXXX" = 5자 → base 최대 25자 (30 - 5 = 25)
+        final int MAX_BASE = 25;
+        String trimmed = base.length() > MAX_BASE ? base.substring(0, MAX_BASE) : base;
+
+        if (userRepository.findByNickname(trimmed).isEmpty()) {
+            return trimmed;
         }
-        return candidate + "_" + UUID.randomUUID().toString().substring(0, 4);
+        for (int i = 0; i < 5; i++) {
+            String candidate = trimmed + "_" + UUID.randomUUID().toString().substring(0, 4);
+            if (userRepository.findByNickname(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        // 극히 드문 경우: 8자 suffix 사용 (21 + "_" + 8 = 30)
+        return trimmed.substring(0, Math.min(trimmed.length(), 21))
+               + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 }
