@@ -35,14 +35,30 @@ public class QuizService {
     public List<QuizResponse> getTodayQuizzes() {
         LocalDate today = LocalDate.now(clock);
 
-        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터 폴백
+        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터(quizDate=null)만 폴백
         List<Quiz> quizzes = quizRepository.countByQuizDate(today) > 0
             ? quizRepository.findAllByQuizDateOrderByIdAsc(today)
-            : quizRepository.findAllByOrderByIdAsc();
+            : quizRepository.findAllByQuizDateIsNullOrderByIdAsc();
 
         return quizzes.stream().map(QuizResponse::from).toList();
     }
 
+    /** Phase 3 표준: 인증된 userId 기반 채점. */
+    @Transactional
+    public AnswerResponse checkAnswer(Long userId, Long quizId, Long selectedChoiceId) {
+        Quiz quiz = quizRepository.findById(quizId)
+            .orElseThrow(() -> new QuizNotFoundException(quizId));
+
+        if (!quiz.hasChoice(selectedChoiceId)) {
+            throw new InvalidChoiceException(quizId, selectedChoiceId);
+        }
+
+        AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
+        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
+        return response;
+    }
+
+    /** Phase 2 하위 호환: demo 유저 기반 채점. */
     @Transactional
     public AnswerResponse checkAnswer(Long quizId, Long selectedChoiceId) {
         Quiz quiz = quizRepository.findById(quizId)
@@ -53,10 +69,7 @@ public class QuizService {
         }
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
-
-        // 스트릭 · 일별 집계 갱신 (첫 시도일 때만 통계 반영 — quizId 로 중복 시도 식별)
-        userService.recordAnswer(quizId, response.correct());
-
+        userService.recordAnswer(quizId, selectedChoiceId, response.correct());
         return response;
     }
 }
