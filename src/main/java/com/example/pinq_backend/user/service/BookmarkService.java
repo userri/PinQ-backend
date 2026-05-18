@@ -80,11 +80,10 @@ public class BookmarkService {
             .stream()
             .collect(Collectors.toMap(Quiz::getId, Function.identity()));
 
-        // attempt 정보(내 답/맞춤여부)도 가능하면 함께 채운다.
+        // attempt 정보(내 답/맞춤여부) — 전체 로드 후 필터 대신 quizIds 범위만 조회
         Map<Long, UserQuizAttempt> attemptByQuizId = userQuizAttemptRepository
-            .findByUserIdOrderByCreatedAtDesc(userId)
+            .findByUserIdAndQuizIdIn(userId, quizIds)
             .stream()
-            .filter(a -> quizById.containsKey(a.getQuizId()))
             .collect(Collectors.toMap(
                 UserQuizAttempt::getQuizId,
                 Function.identity(),
