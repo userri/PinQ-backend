@@ -98,7 +98,7 @@ class QuizControllerTest {
     @Test
     @DisplayName("POST /api/quizzes/{id}/answer 는 채점 결과 + keyword + article 을 반환한다")
     void submitAnswer_returnsResult() throws Exception {
-        given(quizService.checkAnswer(1L, 2L)).willReturn(new AnswerResponse(
+        given(quizService.checkAnswer(anyLong(), 1L, 2L)).willReturn(new AnswerResponse(
             1L,
             2L,
             true,
@@ -133,7 +133,7 @@ class QuizControllerTest {
     @Test
     @DisplayName("존재하지 않는 퀴즈에 답을 제출하면 404 를 반환한다")
     void submitAnswer_quizNotFound() throws Exception {
-        given(quizService.checkAnswer(999L, 1L))
+        given(quizService.checkAnswer(anyLong(), 999L, 1L))
             .willThrow(new QuizNotFoundException(999L));
 
         mockMvc.perform(post("/api/quizzes/999/answer")
