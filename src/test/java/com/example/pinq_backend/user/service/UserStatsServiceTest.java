@@ -74,7 +74,7 @@ class UserStatsServiceTest {
         List<SolvedHistory> all = List.of(day1, day2, day3);
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(all);
-        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+        given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 
@@ -89,7 +89,7 @@ class UserStatsServiceTest {
     @DisplayName("풀이 이력이 없으면 correctRate 는 0, totalSolved 는 0 이다")
     void getStats_zeroHistory_correctRateIsZero() {
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+        given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 
@@ -107,7 +107,7 @@ class UserStatsServiceTest {
         Object[] oldestRow  = new Object[]{TODAY.minusDays(55),  1L};
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+        given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of(todayRow, oldestRow));
 
@@ -125,9 +125,9 @@ class UserStatsServiceTest {
         Object[] row = new Object[]{TODAY, 10L};  // 10개 정답 → 4로 고정
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+        given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.of(row));
+        ).willReturn(List.<Object[]>of(row));
 
         UserStatsResponse result = userStatsService.getStats();
 
@@ -138,7 +138,7 @@ class UserStatsServiceTest {
     @DisplayName("활동이 없는 날은 activityGrid 에서 0 이다")
     void getStats_activityGrid_noActivityIsZero() {
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
-        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+        given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 

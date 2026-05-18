@@ -2,6 +2,7 @@ package com.example.pinq_backend.quiz.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -74,7 +75,7 @@ class QuizServiceTest {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
         given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
-        given(quizRepository.findAllByOrderByIdAsc()).willReturn(List.of(q1, q2));
+        given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
 
         List<QuizResponse> result = quizService.getTodayQuizzes();
 
@@ -92,7 +93,7 @@ class QuizServiceTest {
     void checkAnswer_correct() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "증시 문제", 2);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
-        doNothing().when(userService).recordAnswer(anyLong(), anyBoolean());
+        doNothing().when(userService).recordAnswer(anyLong(), any(), anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 2L);
 
@@ -112,7 +113,7 @@ class QuizServiceTest {
     void checkAnswer_wrong() {
         Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.REAL_ESTATE, "부동산 문제", 3);
         given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
-        doNothing().when(userService).recordAnswer(anyLong(), anyBoolean());
+        doNothing().when(userService).recordAnswer(anyLong(), any(), anyBoolean());
 
         AnswerResponse result = quizService.checkAnswer(1L, 1L);
 
@@ -142,6 +143,6 @@ class QuizServiceTest {
                 .hasMessageContaining("9999")
                 .hasMessageContaining("1");
 
-        verify(userService, never()).recordAnswer(anyLong(), anyBoolean());
+        verify(userService, never()).recordAnswer(anyLong(), any(), anyBoolean());
     }
 }
