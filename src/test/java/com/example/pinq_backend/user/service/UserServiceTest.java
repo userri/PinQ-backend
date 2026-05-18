@@ -15,6 +15,7 @@ import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.exception.DuplicateNicknameException;
 import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
+import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.lang.reflect.Field;
@@ -72,6 +73,9 @@ class UserServiceTest {
 
     @Mock
     private UserQuizAttemptRepository userQuizAttemptRepository;
+
+    @Mock
+    private UserBookmarkRepository userBookmarkRepository;
 
     @InjectMocks
     private UserService userService;
@@ -179,7 +183,7 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory[] captured = captureHistoryOnSave(user);
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         verify(userQuizAttemptRepository).saveAndFlush(any(UserQuizAttempt.class));
@@ -194,7 +198,7 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory[] captured = captureHistoryOnSave(user);
 
-        userService.recordAnswer(QUIZ_1, false);
+        userService.recordAnswer(QUIZ_1, null, false);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(captured[0].getSolvedCount()).isEqualTo(1);
@@ -208,7 +212,7 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory existing = existingHistoryToday(user, 2, 1);
 
-        userService.recordAnswer(QUIZ_2, true);
+        userService.recordAnswer(QUIZ_2, null, true);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(existing.getSolvedCount()).isEqualTo(3);
@@ -222,7 +226,7 @@ class UserServiceTest {
         stubExistingUser(user);
         SolvedHistory existing = existingHistoryToday(user, 2, 2);
 
-        userService.recordAnswer(QUIZ_2, false);
+        userService.recordAnswer(QUIZ_2, null, false);
 
         verify(solvedHistoryRepository).save(any(SolvedHistory.class));
         assertThat(existing.getSolvedCount()).isEqualTo(3);
@@ -237,7 +241,7 @@ class UserServiceTest {
         given(userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), QUIZ_1))
                 .willReturn(true);
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         verify(userQuizAttemptRepository, never()).saveAndFlush(any());
         verify(solvedHistoryRepository, never()).save(any());
@@ -255,7 +259,7 @@ class UserServiceTest {
         given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
                 .willThrow(new DataIntegrityViolationException("uk_user_quiz_attempt"));
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         verify(solvedHistoryRepository, never()).save(any());
         verify(userRepository, never()).save(any());
@@ -271,7 +275,7 @@ class UserServiceTest {
         stubExistingUser(user);
         captureHistoryOnSave(user);
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         assertThat(user.getCurrentStreak()).isEqualTo(1);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -284,7 +288,7 @@ class UserServiceTest {
         stubExistingUser(user);
         captureHistoryOnSave(user);
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         assertThat(user.getCurrentStreak()).isEqualTo(4);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -297,7 +301,7 @@ class UserServiceTest {
         stubExistingUser(user);
         captureHistoryOnSave(user);
 
-        userService.recordAnswer(QUIZ_1, false);
+        userService.recordAnswer(QUIZ_1, null, false);
 
         assertThat(user.getCurrentStreak()).isEqualTo(1);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -310,7 +314,7 @@ class UserServiceTest {
         stubExistingUser(user);
         existingHistoryToday(user, 1, 1);
 
-        userService.recordAnswer(QUIZ_2, true);
+        userService.recordAnswer(QUIZ_2, null, true);
 
         assertThat(user.getCurrentStreak()).isEqualTo(2);
         assertThat(user.getLastSolvedDate()).isEqualTo(TODAY);
@@ -326,7 +330,7 @@ class UserServiceTest {
         given(userRepository.save(any(User.class))).willReturn(created);
         SolvedHistory[] captured = captureHistoryOnSave(created);
 
-        userService.recordAnswer(QUIZ_1, true);
+        userService.recordAnswer(QUIZ_1, null, true);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository, org.mockito.Mockito.times(2)).save(userCaptor.capture());

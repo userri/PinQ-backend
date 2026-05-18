@@ -1,7 +1,10 @@
 package com.example.pinq_backend.config;
 
+import com.example.pinq_backend.auth.filter.JwtAuthFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -9,20 +12,27 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Phase 2 보안 설정.
+ * Phase 3 보안 설정.
  *
- *  - REST API 만 제공하므로 세션 사용 안 함 (STATELESS).
- *  - CSRF 비활성화: 토큰 없이도 POST 가능 (Phase 2 인증 도입 전).
- *  - /api/admin/** 는 AdminAuthFilter 가 X-Admin-Secret 헤더를 검증한다.
- *  - 소셜 로그인은 Phase 3 에서 OAuth2 클라이언트로 별도 추가 예정.
+ *  - STATELESS: 세션 미사용, JWT 로만 인증.
+ *  - /api/auth/**            : 로그인 — 인증 없이 접근 가능.
+ *  - /api/users/register     : 회원가입 — 인증 없이 접근 가능.
+ *  - /api/quizzes/**         : 퀴즈/채점 — JWT 없으면 demo 폴백 허용 (Phase 2 하위 호환).
+ *  - /api/users/me/stats     : 통계 — demo 폴백 허용.
+ *  - /api/users/me/**        : 닉네임 수정/탈퇴 — JWT 필수 (401).
+ *  - /api/bookmarks/**       : 북마크 — JWT 필수 (401).
+ *  - /api/me/**              : 풀이이력/오답노트 — JWT 필수 (401).
+ *  - /api/admin/**           : AdminAuthFilter 가 X-Admin-Secret 헤더 검증.
  */
 @Configuration
 public class SecurityConfig {
 
     private final AdminAuthFilter adminAuthFilter;
+    private final JwtAuthFilter jwtAuthFilter;
 
-    public SecurityConfig(AdminAuthFilter adminAuthFilter) {
+    public SecurityConfig(AdminAuthFilter adminAuthFilter, JwtAuthFilter jwtAuthFilter) {
         this.adminAuthFilter = adminAuthFilter;
+        this.jwtAuthFilter = jwtAuthFilter;
     }
 
     @Bean
@@ -31,23 +41,34 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 로그인/회원가입 — 인증 불필요
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/users/register").permitAll()
+                        // 개발/문서 도구
                         .requestMatchers(
-                                "/api/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
                                 "/actuator/health",
                                 "/h2-console/**"
                         ).permitAll()
-                        .anyRequest().permitAll() // Phase 2: 전체 오픈. Phase 3 에서 좁힐 것.
+                        // JWT 필수 경로 — 미인증 시 401
+                        .requestMatchers("/api/users/me/**").authenticated()
+                        .requestMatchers("/api/bookmarks/**").authenticated()
+                        .requestMatchers("/api/me/**").authenticated()
+                        // 나머지(퀴즈/통계 등) — JWT 없으면 demo 폴백 허용
+                        .anyRequest().permitAll()
                 )
-                // H2 콘솔은 iframe 으로 렌더되므로 X-Frame-Options 완화 필요.
+                .exceptionHandling(e -> e.authenticationEntryPoint(
+                        (req, res, ex) -> res.sendError(
+                                HttpServletResponse.SC_UNAUTHORIZED, "Authentication required")
+                ))
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
-                // AdminAuthFilter 는 Spring Security 인증 필터 앞에서 실행된다.
-                // shouldNotFilter() 로 /api/admin/** 경로에만 적용.
-                .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // JWT 파싱 → AdminAuthFilter 순서로 실행
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(adminAuthFilter, JwtAuthFilter.class)
                 .build();
     }
 }

@@ -5,13 +5,15 @@ import java.util.List;
 /**
  * GET /api/users/me/stats 응답.
  *
- * activityGrid: 오늘 포함 최근 56일(8주) 활동 여부.
+ * activityGrid: 오늘 포함 최근 56일(8주) 처음 시도 정답 수.
  *   index 0 = 55일 전(가장 과거), index 55 = 오늘.
- *   true = 해당 날짜에 퀴즈를 한 문제 이상 풀었음.
+ *   값 = 해당 날짜에 처음 시도에서 맞힌 문제 수 (0 = 활동 없음).
+ *   강도 단계: 0(없음) / 1(1개) / 2(2개) / 3(3개) / 4(4개 이상)
  */
 public record UserStatsResponse(
+    String nickname,
     int streak,
     int totalSolved,
     float correctRate,
-    List<Boolean> activityGrid
+    List<Integer> activityGrid
 ) {}

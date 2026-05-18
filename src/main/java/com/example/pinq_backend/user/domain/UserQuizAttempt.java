@@ -28,6 +28,11 @@ import lombok.NoArgsConstructor;
  *  - row 가 없으면 새로 만들고 SolvedHistory/streak 도 함께 갱신
  *
  * Phase 3 (OAuth) 에서는 user_id 가 인증 컨텍스트에서 채워진다.
+ *
+ * Phase 4 변경점:
+ *  - firstSelectedChoiceId 컬럼 추가: 사용자가 첫 시도에 어떤 선택지를 골랐는지 기록한다.
+ *    오답노트/풀이이력 화면에서 "내가 고른 답"을 표시하기 위해 필요.
+ *    legacy 데이터는 NULL — 클라이언트에서 "기록 없음" 으로 표시.
  */
 @Entity
 @Table(
@@ -56,10 +61,20 @@ public class UserQuizAttempt extends BaseTimeEntity {
     @Column(name = "first_correct", nullable = false)
     private boolean firstCorrect;
 
-    public static UserQuizAttempt create(User user, Long quizId, boolean isCorrect) {
+    /** 첫 시도에 사용자가 고른 선택지 ID. legacy 데이터는 NULL 가능. */
+    @Column(name = "first_selected_choice_id")
+    private Long firstSelectedChoiceId;
+
+    public static UserQuizAttempt create(
+        User user,
+        Long quizId,
+        Long selectedChoiceId,
+        boolean isCorrect
+    ) {
         UserQuizAttempt a = new UserQuizAttempt();
         a.user = user;
         a.quizId = quizId;
+        a.firstSelectedChoiceId = selectedChoiceId;
         a.firstCorrect = isCorrect;
         return a;
     }

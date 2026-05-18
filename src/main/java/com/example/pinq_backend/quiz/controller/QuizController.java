@@ -1,9 +1,11 @@
 package com.example.pinq_backend.quiz.controller;
 
+import com.example.pinq_backend.auth.SecurityUtils;
 import com.example.pinq_backend.quiz.dto.AnswerRequest;
 import com.example.pinq_backend.quiz.dto.AnswerResponse;
 import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.service.QuizService;
+import com.example.pinq_backend.user.service.UserService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +28,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class QuizController {
 
     private final QuizService quizService;
+    private final UserService userService;
 
     @GetMapping("/today")
     public List<QuizResponse> getTodayQuizzes() {
-        return quizService.getTodayQuizzes();
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        return quizService.getTodayQuizzes(userId);
     }
 
     @PostMapping("/{quizId}/answer")
@@ -37,6 +41,7 @@ public class QuizController {
         @PathVariable Long quizId,
         @Valid @RequestBody AnswerRequest request
     ) {
-        return quizService.checkAnswer(quizId, request.choiceId());
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        return quizService.checkAnswer(userId, quizId, request.choiceId());
     }
 }

@@ -1,28 +1,30 @@
 package com.example.pinq_backend.user.controller;
 
+import com.example.pinq_backend.auth.SecurityUtils;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.RegisterRequest;
 import com.example.pinq_backend.user.dto.RegisterResponse;
+import com.example.pinq_backend.user.dto.UpdateNicknameRequest;
 import com.example.pinq_backend.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 사용자 회원가입 / 탈퇴 API.
+ * 사용자 회원가입 / 탈퇴 / 닉네임 수정 API.
  *
- * Phase 2: 인증 없이 nickname 으로 유저를 식별한다.
- * Phase 3: OAuth 토큰에서 userId 를 추출하는 방식으로 교체 예정.
- *
- * POST  /api/users/register  — 회원가입 (닉네임으로 유저 생성)
- * DELETE /api/users/me       — 회원탈퇴 (nickname 쿼리 파라미터로 식별, solved_history 포함 삭제)
+ * POST   /api/users/register      — 닉네임 회원가입 (Phase 2 호환)
+ * PATCH  /api/users/me/nickname   — 닉네임 수정 (JWT 필수)
+ * DELETE /api/users/me            — 회원탈퇴
+ *   - JWT 있음: JWT userId 로 탈퇴
+ *   - JWT 없음: nickname 쿼리 파라미터로 탈퇴 (Phase 2 하위 호환)
  */
 @RestController
 @RequestMapping("/api/users")
@@ -32,12 +34,10 @@ public class UserController {
     private final UserService userService;
 
     /**
-     * 회원가입.
+     * 닉네임 회원가입 (Phase 2 호환용).
      *
      * @param request { "nickname": "홍길동" }
      * @return 201 Created + { userId, nickname }
-     *         409 Conflict  — 닉네임 중복
-     *         400 Bad Request — 유효성 검증 실패
      */
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(
@@ -48,19 +48,29 @@ public class UserController {
     }
 
     /**
-     * 회원탈퇴.
+     * 닉네임 수정 (JWT 필수).
      *
-     * Phase 2 에서는 인증이 없으므로 nickname 쿼리 파라미터로 유저를 특정한다.
-     * 예: DELETE /api/users/me?nickname=홍길동
+     * @param request { "nickname": "새닉네임" }
+     * @return 200 OK + { userId, nickname }
+     */
+    @PatchMapping("/me/nickname")
+    public ResponseEntity<RegisterResponse> updateNickname(
+        @Valid @RequestBody UpdateNicknameRequest request
+    ) {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        User user = userService.updateNickname(userId, request.nickname());
+        return ResponseEntity.ok(RegisterResponse.from(user));
+    }
+
+    /**
+     * 회원탈퇴 — JWT 필수 (SecurityConfig 에서 /api/users/me/** authenticated() 보호).
      *
      * @return 204 No Content — 탈퇴 성공
-     *         404 Not Found  — 해당 닉네임 유저 없음
      */
     @DeleteMapping("/me")
-    public ResponseEntity<Void> withdraw(
-        @RequestParam String nickname
-    ) {
-        userService.withdraw(nickname);
+    public ResponseEntity<Void> withdraw() {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        userService.withdraw(userId);
         return ResponseEntity.noContent().build();
     }
 }

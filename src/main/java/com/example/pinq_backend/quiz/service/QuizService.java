@@ -6,6 +6,7 @@ import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -17,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 퀴즈 도메인 유스케이스.
  *
- *  - {@link #getTodayQuizzes()}: 오늘 풀 4개 문제를 반환 (정답/해설/기사 미포함).
+ *  - {@link #getTodayQuizzes(Long)}: 오늘 풀 문제 중 아직 안 푼 것만 반환 (정답/해설/기사 미포함).
  *  - {@link #checkAnswer(Long, Long)}: 정답 채점 + 해설/기사/keyword 포함 응답.
  *    → 채점 결과를 UserService 에 전달해 스트릭/통계를 함께 갱신한다.
  *    → 제출한 choiceId 가 해당 퀴즈의 보기가 아니면 InvalidChoiceException(400) 을 던져
@@ -29,20 +30,41 @@ import org.springframework.transaction.annotation.Transactional;
 public class QuizService {
 
     private final QuizRepository quizRepository;
+    private final UserQuizAttemptRepository userQuizAttemptRepository;
     private final UserService userService;
     private final Clock clock;
 
-    public List<QuizResponse> getTodayQuizzes() {
+    public List<QuizResponse> getTodayQuizzes(Long userId) {
         LocalDate today = LocalDate.now(clock);
 
-        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터 폴백
+        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터(quizDate=null)만 폴백
         List<Quiz> quizzes = quizRepository.countByQuizDate(today) > 0
             ? quizRepository.findAllByQuizDateOrderByIdAsc(today)
-            : quizRepository.findAllByOrderByIdAsc();
+            : quizRepository.findAllByQuizDateIsNullOrderByIdAsc();
 
-        return quizzes.stream().map(QuizResponse::from).toList();
+        // 이미 풀이 기록이 있는 퀴즈는 제외 → 다 풀면 빈 리스트 반환
+        return quizzes.stream()
+            .filter(q -> !userQuizAttemptRepository.existsByUserIdAndQuizId(userId, q.getId()))
+            .map(QuizResponse::from)
+            .toList();
     }
 
+    /** Phase 3 표준: 인증된 userId 기반 채점. */
+    @Transactional
+    public AnswerResponse checkAnswer(Long userId, Long quizId, Long selectedChoiceId) {
+        Quiz quiz = quizRepository.findById(quizId)
+            .orElseThrow(() -> new QuizNotFoundException(quizId));
+
+        if (!quiz.hasChoice(selectedChoiceId)) {
+            throw new InvalidChoiceException(quizId, selectedChoiceId);
+        }
+
+        AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
+        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
+        return response;
+    }
+
+    /** Phase 2 하위 호환: demo 유저 기반 채점. */
     @Transactional
     public AnswerResponse checkAnswer(Long quizId, Long selectedChoiceId) {
         Quiz quiz = quizRepository.findById(quizId)
@@ -53,10 +75,7 @@ public class QuizService {
         }
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
-
-        // 스트릭 · 일별 집계 갱신 (첫 시도일 때만 통계 반영 — quizId 로 중복 시도 식별)
-        userService.recordAnswer(quizId, response.correct());
-
+        userService.recordAnswer(quizId, selectedChoiceId, response.correct());
         return response;
     }
 }

@@ -101,4 +101,9 @@ public class User extends BaseTimeEntity {
         boolean isConsecutive = lastSolvedDate.plusDays(1).isEqual(today);
         return isConsecutive ? currentStreak + 1 : 1;
     }
+
+    /** 닉네임 수정. */
+    public void updateNickname(String newNickname) {
+        this.nickname = newNickname;
+    }
 }
