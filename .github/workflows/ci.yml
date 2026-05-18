@@ -71,7 +71,7 @@ jobs:
   #   1) resources_default 네트워크가 없으면 생성 (MySQL 컨테이너와 같은 네트워크여야 통신 가능)
   #   2) 새 이미지 pull
   #   3) 기존 app 컨테이너만 중단 (DB 컨테이너는 건드리지 않음)
-  #   4) docker-compose.ec2.yml 로 app 컨테이너 재기동 (Hub 이미지 사용, build: . 없음)
+  #   4) docker-compose.yml 로 app 컨테이너 재기동 (Hub 이미지 사용, build: . 없음)
   #   5) Spring Boot 기동 대기(10s) 후 최대 60초 헬스체크
   #      — 실패 시 즉시 exit 1 로 워크플로우를 빨간불로 만듦
   # ─────────────────────────────────────────
@@ -96,13 +96,16 @@ jobs:
             # 2) 새 이미지 pull
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/pinq-backend:latest
 
-            # 3) 기존 app 컨테이너만 중단·제거 (DB는 별도 관리)
+            # 3) 최신 설정 파일(docker-compose.yml 등) 동기화
             cd ~/pinq_backend
-            docker compose -f docker-compose.ec2.yml stop app
-            docker compose -f docker-compose.ec2.yml rm -f app
+            git pull origin main
 
-            # 4) 재기동 (EC2 전용 compose 파일: Hub 이미지 사용, build: . 없음)
-            docker compose -f docker-compose.ec2.yml up -d app
+            # 4-1) 기존 app 컨테이너만 중단·제거 (DB는 별도 관리)
+            docker compose -f docker-compose.yml stop app
+            docker compose -f docker-compose.yml rm -f app
+
+            # 4-2) 재기동 (EC2 전용 compose 파일: Hub 이미지 사용, build: . 없음)
+            docker compose -f docker-compose.yml up -d app
 
             # 5) 헬스체크 (Spring Boot 초기 기동 대기 후 최대 60초)
             echo "Waiting for app to start..."
