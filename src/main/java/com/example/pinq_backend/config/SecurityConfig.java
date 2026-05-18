@@ -1,5 +1,6 @@
 package com.example.pinq_backend.config;
 
+import com.example.pinq_backend.auth.filter.JwtAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -9,20 +10,23 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Phase 2 보안 설정.
+ * Phase 3 보안 설정.
  *
- *  - REST API 만 제공하므로 세션 사용 안 함 (STATELESS).
- *  - CSRF 비활성화: 토큰 없이도 POST 가능 (Phase 2 인증 도입 전).
- *  - /api/admin/** 는 AdminAuthFilter 가 X-Admin-Secret 헤더를 검증한다.
- *  - 소셜 로그인은 Phase 3 에서 OAuth2 클라이언트로 별도 추가 예정.
+ *  - STATELESS: 세션 미사용, JWT 로만 인증.
+ *  - /api/auth/**  : 로그인 엔드포인트 — 인증 없이 접근 가능.
+ *  - /api/**       : JWT 가 있으면 해당 유저, 없으면 demo 유저로 폴백 (Phase 2 하위 호환).
+ *  - /api/admin/** : AdminAuthFilter 가 X-Admin-Secret 헤더 검증.
+ *  - JwtAuthFilter : UsernamePasswordAuthenticationFilter 앞에서 Bearer 토큰 파싱.
  */
 @Configuration
 public class SecurityConfig {
 
     private final AdminAuthFilter adminAuthFilter;
+    private final JwtAuthFilter jwtAuthFilter;
 
-    public SecurityConfig(AdminAuthFilter adminAuthFilter) {
+    public SecurityConfig(AdminAuthFilter adminAuthFilter, JwtAuthFilter jwtAuthFilter) {
         this.adminAuthFilter = adminAuthFilter;
+        this.jwtAuthFilter = jwtAuthFilter;
     }
 
     @Bean
@@ -31,23 +35,25 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 로그인 엔드포인트는 인증 없이 오픈
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // 개발/문서 도구
                         .requestMatchers(
-                                "/api/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
                                 "/actuator/health",
                                 "/h2-console/**"
                         ).permitAll()
-                        .anyRequest().permitAll() // Phase 2: 전체 오픈. Phase 3 에서 좁힐 것.
+                        // 나머지 모든 요청도 permitAll — JWT 없으면 demo 유저 폴백
+                        .anyRequest().permitAll()
                 )
-                // H2 콘솔은 iframe 으로 렌더되므로 X-Frame-Options 완화 필요.
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
-                // AdminAuthFilter 는 Spring Security 인증 필터 앞에서 실행된다.
-                // shouldNotFilter() 로 /api/admin/** 경로에만 적용.
-                .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // JWT 파싱 → AdminAuthFilter 순서로 실행
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(adminAuthFilter, JwtAuthFilter.class)
                 .build();
     }
 }
