@@ -56,8 +56,12 @@ public class UserStatsService {
         float correctRate = totalSolved > 0 ? (float) totalCorrect / totalSolved : 0f;
 
         // ── activityGrid (최근 56일) ──────────────────────────────
-        // 날짜별 첫 시도 수(정답 여부 무관)를 집계하여 강도(0~4)로 변환한다.
-        // 오답만 있는 날도 시도한 것으로 인정해 히트맵에 표시한다.
+        // 강도 의미:
+        //   0 = 활동 없음 (시도조차 안 한 날)
+        //   1 = 활동은 했으나 맞힌 개수 0개
+        //   2 = 1개 정답
+        //   3 = 2개 정답
+        //   4 = 3개 이상 정답 (최대 강도)
         LocalDate today = LocalDate.now(clock);
         LocalDate from  = today.minusDays(GRID_DAYS - 1);
 
@@ -71,11 +75,32 @@ public class UserStatsService {
                     row -> ((Long) row[1]).intValue()
                 ));
 
+        // 날짜 → 첫 시도 정답 수 맵
+        Map<LocalDate, Integer> correctByDate =
+            userQuizAttemptRepository
+                .countFirstCorrectByDateBetween(userId, from, today)
+                .stream()
+                .collect(Collectors.toMap(
+                    row -> (LocalDate) row[0],
+                    row -> ((Long) row[1]).intValue()
+                ));
+
         // index 0 = 가장 과거(55일 전), index 55 = 오늘
         List<Integer> activityGrid = new ArrayList<>(GRID_DAYS);
         for (int i = GRID_DAYS - 1; i >= 0; i--) {
-            int count = attemptsByDate.getOrDefault(today.minusDays(i), 0);
-            activityGrid.add(Math.min(count, MAX_INTENSITY));
+            LocalDate date    = today.minusDays(i);
+            int attempts = attemptsByDate.getOrDefault(date, 0);
+            int correct  = correctByDate.getOrDefault(date, 0);
+
+            int intensity;
+            if (attempts == 0) {
+                intensity = 0;                               // 활동 없음
+            } else if (correct == 0) {
+                intensity = 1;                               // 활동은 했으나 정답 0개
+            } else {
+                intensity = Math.min(correct + 1, MAX_INTENSITY); // 1개→2, 2개→3, 3+개→4
+            }
+            activityGrid.add(intensity);
         }
 
         return new UserStatsResponse(user.getNickname(), streak, totalSolved, correctRate, activityGrid);
