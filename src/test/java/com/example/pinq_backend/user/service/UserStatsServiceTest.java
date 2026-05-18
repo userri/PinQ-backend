@@ -102,32 +102,40 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("activityGrid 는 56개이고 index 0 이 55일 전, index 55 가 오늘이다")
     void getStats_activityGrid_sizeAndDirection() {
-        // 오늘: 정답 2개 / 55일 전: 정답 1개
-        Object[] todayRow   = new Object[]{TODAY,                 2L};
-        Object[] oldestRow  = new Object[]{TODAY.minusDays(55),  1L};
+        // 오늘: 시도 2회 중 1개 정답 → intensity 2 / 55일 전: 시도는 했으나 정답 0개 → intensity 1
+        Object[] todayAttempt  = new Object[]{TODAY,               2L};
+        Object[] oldestAttempt = new Object[]{TODAY.minusDays(55), 1L};
+        Object[] todayCorrect  = new Object[]{TODAY,               1L};
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.of(todayRow, oldestRow));
+        ).willReturn(List.of(todayAttempt, oldestAttempt));
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.of(todayCorrect)); // 55일 전은 정답 없음 → 목록에 없음
 
         UserStatsResponse result = userStatsService.getStats();
 
         assertThat(result.activityGrid()).hasSize(56);
-        assertThat(result.activityGrid().get(55)).isEqualTo(2);  // 오늘
-        assertThat(result.activityGrid().get(0)).isEqualTo(1);   // 55일 전
-        assertThat(result.activityGrid().get(1)).isEqualTo(0);   // 54일 전 — 기록 없음
+        assertThat(result.activityGrid().get(55)).isEqualTo(2);  // 오늘: 정답 1개 → min(1+1,4)=2
+        assertThat(result.activityGrid().get(0)).isEqualTo(1);   // 55일 전: 시도했으나 정답 0개 → 1
+        assertThat(result.activityGrid().get(1)).isEqualTo(0);   // 54일 전 — 기록 없음 → 0
     }
 
     @Test
-    @DisplayName("정답 수가 4 이상이면 강도는 4로 고정된다")
+    @DisplayName("정답 수가 3 이상이면 강도는 4로 고정된다")
     void getStats_activityGrid_intensityCapAt4() {
-        Object[] row = new Object[]{TODAY, 10L};  // 10개 정답 → 4로 고정
+        Object[] attemptRow = new Object[]{TODAY, 4L};  // 4회 시도
+        Object[] correctRow = new Object[]{TODAY, 3L};  // 3개 정답 → min(3+1, 4) = 4
 
         given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.<Object[]>of(row));
+        ).willReturn(List.<Object[]>of(attemptRow));
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.<Object[]>of(correctRow));
 
         UserStatsResponse result = userStatsService.getStats();
 
