@@ -66,13 +66,14 @@ public class UserStatsService {
         LocalDate from  = today.minusDays(GRID_DAYS - 1);
 
         // 날짜 → 첫 시도 수 맵 (정답 여부 무관)
+        // native query 반환 타입: DATE → java.sql.Date, COUNT → Long|BigInteger (DB 방언 차이)
         Map<LocalDate, Integer> attemptsByDate =
             userQuizAttemptRepository
                 .countAttemptsByDateBetween(userId, from, today)
                 .stream()
                 .collect(Collectors.toMap(
-                    row -> (LocalDate) row[0],
-                    row -> ((Long) row[1]).intValue()
+                    row -> toLocalDate(row[0]),
+                    row -> ((Number) row[1]).intValue()
                 ));
 
         // 날짜 → 첫 시도 정답 수 맵
@@ -81,8 +82,8 @@ public class UserStatsService {
                 .countFirstCorrectByDateBetween(userId, from, today)
                 .stream()
                 .collect(Collectors.toMap(
-                    row -> (LocalDate) row[0],
-                    row -> ((Long) row[1]).intValue()
+                    row -> toLocalDate(row[0]),
+                    row -> ((Number) row[1]).intValue()
                 ));
 
         // index 0 = 가장 과거(55일 전), index 55 = 오늘
@@ -104,6 +105,16 @@ public class UserStatsService {
         }
 
         return new UserStatsResponse(user.getNickname(), streak, totalSolved, correctRate, activityGrid);
+    }
+
+    /**
+     * native query 날짜 컬럼을 LocalDate 로 안전하게 변환한다.
+     * DB/드라이버에 따라 java.sql.Date 또는 LocalDate 가 내려올 수 있다.
+     */
+    private static LocalDate toLocalDate(Object obj) {
+        if (obj instanceof LocalDate ld) return ld;
+        if (obj instanceof java.sql.Date d) return d.toLocalDate();
+        return LocalDate.parse(obj.toString()); // fallback
     }
 }
 
