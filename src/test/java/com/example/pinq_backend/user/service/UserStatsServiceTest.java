@@ -113,7 +113,7 @@ class UserStatsServiceTest {
         ).willReturn(List.of(todayAttempt, oldestAttempt));
         given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
-        ).willReturn(List.of(todayCorrect)); // 55일 전은 정답 없음 → 목록에 없음
+        ).willReturn(List.<Object[]>of(todayCorrect)); // 55일 전은 정답 없음 → 목록에 없음
 
         UserStatsResponse result = userStatsService.getStats();
 
