@@ -10,6 +10,11 @@
 #   DB_NAME=pinq_db
 #   DB_USERNAME=...
 #   DB_PASSWORD=...
+#   JWT_SECRET=<openssl rand -hex 32 으로 생성>
+#   ADMIN_SECRET=<openssl rand -hex 32 으로 생성>
+#   NAVER_CLIENT_ID=...         # 선택 — 없으면 네이버 검색 기능만 비활성화
+#   NAVER_CLIENT_SECRET=...     # 선택
+#   OPENAI_API_KEY=...          # 선택 — 없으면 AI 해설 기능만 비활성화
 
 services:
   app:
@@ -19,11 +24,19 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # ── DB ────────────────────────────────────────────────────────────────
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT:-3306}
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+      # ── 인증 (필수) ────────────────────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      # ── 외부 API (선택 — 없으면 해당 기능만 비활성화됨) ─────────────────────
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     restart: unless-stopped
     networks:
       - resources_default
