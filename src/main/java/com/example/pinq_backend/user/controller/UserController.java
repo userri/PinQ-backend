@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -64,25 +63,14 @@ public class UserController {
     }
 
     /**
-     * 회원탈퇴.
-     * JWT 인증이 있으면 토큰의 userId 로, 없으면 nickname 파라미터로 탈퇴한다.
+     * 회원탈퇴 — JWT 필수 (SecurityConfig 에서 /api/users/me/** authenticated() 보호).
      *
      * @return 204 No Content — 탈퇴 성공
      */
     @DeleteMapping("/me")
-    public ResponseEntity<Void> withdraw(
-        @RequestParam(required = false) String nickname
-    ) {
-        // JWT 인증된 경우 — userId 로 탈퇴
-        org.springframework.security.core.Authentication auth =
-                org.springframework.security.core.context.SecurityContextHolder
-                        .getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof Long userId) {
-            userService.withdraw(userId);
-        } else {
-            // Phase 2 하위 호환 — nickname 파라미터로 탈퇴
-            userService.withdraw(nickname != null ? nickname : "demo");
-        }
+    public ResponseEntity<Void> withdraw() {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        userService.withdraw(userId);
         return ResponseEntity.noContent().build();
     }
 }
