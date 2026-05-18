@@ -20,6 +20,7 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -49,6 +50,9 @@ class QuizServiceTest {
     private QuizRepository quizRepository;
 
     @Mock
+    private UserQuizAttemptRepository userQuizAttemptRepository;
+
+    @Mock
     private UserService userService;
 
     @Mock
@@ -76,8 +80,10 @@ class QuizServiceTest {
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
         given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
+        // 아직 아무것도 안 푼 상태
+        given(userQuizAttemptRepository.existsByUserIdAndQuizId(anyLong(), anyLong())).willReturn(false);
 
-        List<QuizResponse> result = quizService.getTodayQuizzes();
+        List<QuizResponse> result = quizService.getTodayQuizzes(1L);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).id()).isEqualTo(1L);
@@ -86,6 +92,38 @@ class QuizServiceTest {
         assertThat(result.get(0).question()).isEqualTo("금리 문제");
         assertThat(result.get(0).choices()).hasSize(4);
         assertThat(result.get(1).question()).isEqualTo("환율 문제");
+    }
+
+    @Test
+    @DisplayName("이미 푼 퀴즈는 오늘의 목록에서 제외된다")
+    void getTodayQuizzes_excludesAlreadyAttemptedQuizzes() {
+        Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
+        Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
+        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
+        given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
+        // q1은 이미 풀었고, q2는 아직 안 푼 상태
+        given(userQuizAttemptRepository.existsByUserIdAndQuizId(1L, 1L)).willReturn(true);
+        given(userQuizAttemptRepository.existsByUserIdAndQuizId(1L, 2L)).willReturn(false);
+
+        List<QuizResponse> result = quizService.getTodayQuizzes(1L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("모든 퀴즈를 풀었으면 빈 목록을 반환한다")
+    void getTodayQuizzes_returnsEmptyWhenAllAttempted() {
+        Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
+        Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
+        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
+        given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
+        // 모두 이미 푼 상태
+        given(userQuizAttemptRepository.existsByUserIdAndQuizId(anyLong(), anyLong())).willReturn(true);
+
+        List<QuizResponse> result = quizService.getTodayQuizzes(1L);
+
+        assertThat(result).isEmpty();
     }
 
     @Test

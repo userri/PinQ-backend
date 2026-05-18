@@ -7,6 +7,9 @@ import com.example.pinq_backend.quiz.dto.QuizResponse.ChoiceResponse;
 import com.example.pinq_backend.quiz.exception.GlobalExceptionHandler;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.service.QuizService;
+import com.example.pinq_backend.user.domain.User;
+import com.example.pinq_backend.user.service.UserService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +24,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -44,10 +49,22 @@ class QuizControllerTest {
     @MockitoBean
     private QuizService quizService;
 
+    @MockitoBean
+    private UserService userService;
+
+    @BeforeEach
+    void setUp() {
+        // @WithMockUser 는 principal 을 String 으로 설정하므로 SecurityUtils 가 demo 유저 경로로 진입한다.
+        // getTodayQuizzes / submitAnswer 모두 getCurrentUserId 를 호출하므로 공통으로 스텁한다.
+        User demoUser = mock(User.class);
+        given(demoUser.getId()).willReturn(1L);
+        given(userService.findDemoUser()).willReturn(demoUser);
+    }
+
     @Test
     @DisplayName("GET /api/quizzes/today 는 200 과 퀴즈 목록을 반환한다")
     void getTodayQuizzes_returnsJson() throws Exception {
-        given(quizService.getTodayQuizzes()).willReturn(List.of(
+        given(quizService.getTodayQuizzes(anyLong())).willReturn(List.of(
             new QuizResponse(
                 1L, "INTEREST_RATE", "금리", "금리 문제",
                 List.of(

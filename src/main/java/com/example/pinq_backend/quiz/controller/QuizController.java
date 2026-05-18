@@ -32,7 +32,8 @@ public class QuizController {
 
     @GetMapping("/today")
     public List<QuizResponse> getTodayQuizzes() {
-        return quizService.getTodayQuizzes();
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        return quizService.getTodayQuizzes(userId);
     }
 
     @PostMapping("/{quizId}/answer")
