@@ -20,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -69,7 +70,7 @@ class UserStatsControllerTest {
         List<Integer> grid = new ArrayList<>(Collections.nCopies(55, 0));
         grid.add(3);
 
-        given(userStatsService.getStats()).willReturn(
+        given(userStatsService.getStats(anyLong())).willReturn(
             new UserStatsResponse("테스트유저", 3, 12, 0.75f, grid)
         );
 
@@ -87,7 +88,7 @@ class UserStatsControllerTest {
     @Test
     @DisplayName("demo 유저가 DB 에 없으면 503 을 반환한다")
     void getMyStats_demoUserMissing_returns503() throws Exception {
-        given(userStatsService.getStats())
+        given(userStatsService.getStats(anyLong()))
             .willThrow(new IllegalStateException("demo 유저가 존재하지 않습니다."));
 
         mockMvc.perform(get("/api/users/me/stats"))
