@@ -80,6 +80,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
+      # 3) 최신 docker-compose.yml 을 EC2 로 복사 (EC2 에 git 없음)
+      - name: Copy docker-compose.yml to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker-compose.yml
+          target: ~/pinq_backend/
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -96,13 +108,14 @@ jobs:
             # 2) 새 이미지 pull
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/pinq-backend:latest
 
-            # 3) 기존 app 컨테이너만 중단·제거 (DB는 별도 관리)
-            cd ~/pinq_backend
-            docker compose -f docker-compose.ec2.yml stop app
-            docker compose -f docker-compose.ec2.yml rm -f app
 
-            # 4) 재기동 (EC2 전용 compose 파일: Hub 이미지 사용, build: . 없음)
-            docker compose -f docker-compose.ec2.yml up -d app
+            # 4-1) 기존 app 컨테이너만 중단·제거 (DB는 별도 관리)
+            cd ~/pinq_backend
+            docker compose stop app
+            docker compose rm -f app
+
+            # 4-2) 재기동
+            docker compose up -d app
 
             # 5) 헬스체크 (Spring Boot 초기 기동 대기 후 최대 60초)
             echo "Waiting for app to start..."
