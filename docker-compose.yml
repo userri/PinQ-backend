@@ -1,6 +1,22 @@
+# EC2 배포 및 로컬 Docker 실행 공용 compose 파일.
+#
+# 필요한 .env 파일:
+#   DOCKERHUB_USERNAME=...
+#   DB_HOST=mysql-container   # 또는 RDS 호스트
+#   DB_PORT=3306
+#   DB_NAME=pinq_db
+#   DB_USERNAME=...
+#   DB_PASSWORD=...
+#   JWT_SECRET=<openssl rand -hex 32>
+#   ADMIN_SECRET=<openssl rand -hex 32>
+#   NAVER_CLIENT_ID=...         # 선택 — 없으면 네이버 검색 기능만 비활성화
+#   NAVER_CLIENT_SECRET=...     # 선택
+#   OPENAI_API_KEY=...          # 선택 — 없으면 AI 해설 기능만 비활성화
+
 services:
   app:
-    build: .
+    image: ${DOCKERHUB_USERNAME}/pinq-backend:latest
+    container_name: pinq-app
     ports:
       - "8080:8080"
     environment:
@@ -10,6 +26,12 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    restart: unless-stopped
     networks:
       - resources_default
 
