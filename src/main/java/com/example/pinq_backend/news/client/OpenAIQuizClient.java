@@ -28,10 +28,16 @@ public class OpenAIQuizClient {
     private final RestClient restClient;
     private final OpenAIProperties props;
     private final ObjectMapper objectMapper;
+    private final AnthropicVerifyClient anthropicVerifyClient;
 
-    public OpenAIQuizClient(OpenAIProperties props, ObjectMapper objectMapper) {
+    public OpenAIQuizClient(
+            OpenAIProperties props,
+            ObjectMapper objectMapper,
+            AnthropicVerifyClient anthropicVerifyClient
+    ) {
         this.props = props;
         this.objectMapper = objectMapper;
+        this.anthropicVerifyClient = anthropicVerifyClient;
         this.restClient = RestClient.builder()
                 .defaultHeader("Authorization", "Bearer " + props.apiKey())
                 .defaultHeader("Content-Type", "application/json")
@@ -81,10 +87,12 @@ public class OpenAIQuizClient {
     }
 
     /**
-     * 생성된 퀴즈의 정답을 별도 API 호출로 독립 검증한다.
+     * 생성된 퀴즈의 정답을 cross-model로 독립 검증한다.
      *
-     * 생성 호출과 컨텍스트를 완전히 분리하여,
-     * AI가 자신의 이전 답변에 bias 없이 순수하게 경제 사실만 판단하게 한다.
+     * 생성은 OpenAI(gpt-4o-mini), 검증은 Anthropic(Claude).
+     * 같은 모델로 생성+검증 시 correlated bias로 인해 동일한 인과 오류
+     * (예: "환율 상승 → 수입 증가")를 양쪽 다 통과시키는 문제가 있어,
+     * 학습 데이터가 다른 별도 모델을 사용한다.
      *
      * 전체 보기를 포함하여 검증한다.
      * 정답 보기만 전달하면 다른 보기가 경제학적으로 동등하게 옳더라도
@@ -134,40 +142,13 @@ public class OpenAIQuizClient {
                 JSON만 반환하고 다른 텍스트는 금지입니다.
                 """.formatted(quiz.getQuestion(), choicesText, answerContent);
 
-        try {
-            Map<String, Object> requestBody = Map.of(
-                    "model", props.model(),
-                    "max_tokens", 128,
-                    "messages", List.of(
-                            Map.of("role", "user", "content", verifyPrompt)
-                    )
-            );
-
-            String rawResponse = restClient.post()
-                    .uri(OPENAI_API_URL)
-                    .body(requestBody)
-                    .retrieve()
-                    .body(String.class);
-
-            JsonNode root = objectMapper.readTree(rawResponse);
-            String text = root.path("choices").get(0).path("message").path("content").asText();
-            String json = text.trim()
-                    .replaceAll("^```json\\s*", "")
-                    .replaceAll("^```\\s*", "")
-                    .replaceAll("```\\s*$", "")
-                    .trim();
-
-            JsonNode result = objectMapper.readTree(json);
-            boolean valid = result.path("valid").asBoolean(true);
-            if (!valid) {
-                log.warn("검증 실패 이유: {}", result.path("reason").asText());
-            }
-            return valid;
-        } catch (Exception e) {
-            // 검증 자체가 실패하면 안전하게 통과시킴 (과도한 폐기 방지)
-            log.warn("정답 검증 호출 실패, 통과 처리. question={}", quiz.getQuestion());
-            return true;
+        // Anthropic Claude로 cross-model 검증 위임.
+        // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
+        boolean valid = anthropicVerifyClient.verify(verifyPrompt);
+        if (!valid) {
+            log.info("Claude 검증 실패로 퀴즈 폐기. question={}", quiz.getQuestion());
         }
+        return valid;
     }
 
     private Optional<GeneratedQuizDto> parseQuiz(String rawResponse) {
