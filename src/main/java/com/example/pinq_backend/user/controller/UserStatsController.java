@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserStatsController {
 
     private final UserStatsService userStatsService;
-    private final UserService userService;
+    private final  UserService userService;
 
     @GetMapping("/me/stats")
     public UserStatsResponse getMyStats() {
