@@ -17,6 +17,7 @@ import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.auth.service.KakaoOAuthService;
 import com.example.pinq_backend.auth.service.KakaoOAuthService.KakaoOAuthException;
 import com.example.pinq_backend.auth.service.KakaoOAuthService.KakaoUserInfo;
+import com.example.pinq_backend.auth.service.RefreshTokenService;
 import com.example.pinq_backend.quiz.exception.GlobalExceptionHandler;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.service.UserService;
@@ -61,6 +62,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
+
+    @MockitoBean
+    private RefreshTokenService refreshTokenService;
 
     private User mockUser;
 
