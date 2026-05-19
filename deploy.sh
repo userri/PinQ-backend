@@ -16,8 +16,8 @@
 set -euo pipefail
 
 IMAGE_TAG="${1:-latest}"
-HEALTH_RETRIES=20
-HEALTH_INTERVAL=3  # 초
+HEALTH_RETRIES=36  # 36회 × 5초 = 180초 (start-period 60s + interval 10s × retries 3 충분 커버)
+HEALTH_INTERVAL=5  # 초
 
 # ── 현재 라이브 슬롯 판별 ────────────────────────────────────────────────────
 CURRENT=$(grep -o 'pinq-app-[a-z]*' nginx/upstream.conf 2>/dev/null | head -1 || echo "pinq-app-green")
@@ -60,6 +60,8 @@ done
 
 if [[ "$STATUS" != "healthy" ]]; then
   echo "✗ 헬스체크 타임아웃 — 배포 중단"
+  echo "▶ 앱 로그 (마지막 50줄):"
+  docker logs --tail 50 pinq-app-${NEXT} 2>&1 || true
   docker compose stop app-${NEXT}
   exit 1
 fi
