@@ -40,9 +40,9 @@ docker network inspect resources_default >/dev/null 2>&1 \
 echo "▶ 이미지 pull 중 (IMAGE_TAG=${IMAGE_TAG})..."
 APP_IMAGE_TAG="${IMAGE_TAG}" docker compose pull app-${NEXT}
 
-# ── 의존 서비스(redis) 보장 ───────────────────────────────────────────────
-echo "▶ redis 컨테이너 확인 및 시동..."
-docker compose up -d --no-deps redis
+# ── 의존 서비스(redis, nginx) 보장 ────────────────────────────────────────────
+echo "▶ redis, nginx 컨테이너 확인 및 시동..."
+docker compose up -d --no-deps redis nginx
 
 # ── 대기 슬롯 컨테이너 교체 ──────────────────────────────────────────────────
 echo "▶ pinq-app-${NEXT} 시작 (IMAGE_TAG=${IMAGE_TAG})..."
