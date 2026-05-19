@@ -3,6 +3,7 @@ package com.example.pinq_backend.news.client;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -46,6 +47,19 @@ public class QuizRuleValidator {
             return new Result(false, reason);
         }
     }
+
+    /**
+     * 영어 단어 3개 이상이 공백으로 연속해서 등장하는 패턴.
+     *
+     * 예시 매치: "project's profit recovery" (3단어 연속)
+     * 비매치: "KOSPI", "GDP는", "ETF에 투자" (단일 영문 토큰은 통과)
+     *
+     * 출제 결과에 "재건축 project's profit recovery system" 같이 한국어와 영어 구절이
+     * 섞이는 케이스를 차단하기 위한 것. cross-model 검증은 경제학적 진위만 보기 때문에
+     * 언어 일관성은 여기서 잡는다.
+     */
+    private static final Pattern ENGLISH_WORD_RUN =
+            Pattern.compile("[a-zA-Z][a-zA-Z']*(?:\\s+[a-zA-Z][a-zA-Z']*){2,}");
 
     private record CausalRule(
             List<String> questionTokensAll,
@@ -154,6 +168,7 @@ public class QuizRuleValidator {
         String question = quiz.getQuestion();
         String answer = answerOpt.get();
 
+        // 1) 경제 인과 위반 검사
         for (CausalRule rule : RULES) {
             if (matchesAll(question, rule.questionTokensAll())
                     && containsAny(answer, rule.forbiddenAnswerPhrases())) {
@@ -161,7 +176,38 @@ public class QuizRuleValidator {
             }
         }
 
+        // 2) 언어 일관성 검사 — 한국어 필드에 3+ 영어 단어 연속 등장 시 폐기
+        Result langResult = checkKoreanOnly(quiz);
+        if (!langResult.valid()) return langResult;
+
         return Result.ok();
+    }
+
+    /**
+     * question·choices·explanation·keyword 필드에 3개 이상 연속된 영어 단어가
+     * 등장하면 폐기. 단일 영문 약어(KOSPI, GDP 등)는 통과.
+     */
+    private Result checkKoreanOnly(GeneratedQuizDto quiz) {
+        if (hasEnglishRun(quiz.getQuestion())) {
+            return Result.fail("question에 영어 구절 혼용");
+        }
+        for (GeneratedQuizDto.ChoiceDto choice : quiz.getChoices()) {
+            if (hasEnglishRun(choice.getContent())) {
+                return Result.fail("choice에 영어 구절 혼용: " + choice.getContent());
+            }
+        }
+        if (hasEnglishRun(quiz.getExplanation())) {
+            return Result.fail("explanation에 영어 구절 혼용");
+        }
+        if (hasEnglishRun(quiz.getKeyword())) {
+            return Result.fail("keyword에 영어 구절 혼용");
+        }
+        return Result.ok();
+    }
+
+    private boolean hasEnglishRun(String text) {
+        if (text == null || text.isBlank()) return false;
+        return ENGLISH_WORD_RUN.matcher(text).find();
     }
 
     private boolean matchesAll(String text, List<String> tokens) {

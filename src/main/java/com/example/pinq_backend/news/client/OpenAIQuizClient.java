@@ -271,6 +271,9 @@ public class OpenAIQuizClient {
             2. 정답 외 3개 보기 중 옳다고 볼 여지가 있는 보기가 있는가? 있으면 폐기.
             3. 문제가 "금지 출제 패턴"에 해당하는가? 해당하면 폐기.
             4. 문제가 지정된 카테고리와 정확히 일치하는가? 아니면 SKIP.
+            5. question·choices·explanation·keyword 가 모두 100% 한국어로 작성되었는가?
+               영어 문장이나 영어 단어가 3개 이상 연속 등장하면 폐기.
+               (단, KOSPI·GDP·ETF·OECD 같이 한국에서 통상 영문으로 쓰는 약어는 단일 토큰으로만 허용)
             하나라도 불확실하면 SKIP 또는 재출제.
 
             ## 응답 형식 (반드시 JSON만, 다른 텍스트 절대 금지)
@@ -278,18 +281,18 @@ public class OpenAIQuizClient {
             SKIP인 경우:
             {"skip": true, "skipReason": "사유"}
 
-            퀴즈 생성인 경우:
+            퀴즈 생성인 경우 (모든 한국어 필드는 100% 한국어로 작성. 영어 문장 혼용 금지):
             {
               "skip": false,
-              "question": "퀴즈 문제 (개념·메커니즘·비교·응용 중 하나)",
+              "question": "퀴즈 문제 (개념·메커니즘·비교·응용 중 하나, 100% 한국어)",
               "choices": [
-                {"orderNum": 1, "content": "보기1", "isAnswer": false},
-                {"orderNum": 2, "content": "보기2", "isAnswer": true},
-                {"orderNum": 3, "content": "보기3", "isAnswer": false},
-                {"orderNum": 4, "content": "보기4", "isAnswer": false}
+                {"orderNum": 1, "content": "보기1 (100% 한국어)", "isAnswer": false},
+                {"orderNum": 2, "content": "보기2 (100% 한국어)", "isAnswer": true},
+                {"orderNum": 3, "content": "보기3 (100% 한국어)", "isAnswer": false},
+                {"orderNum": 4, "content": "보기4 (100% 한국어)", "isAnswer": false}
               ],
-              "explanation": "정답 해설 (2~3문장)",
-              "keyword": "핵심 경제 용어: 한 줄 개념 설명"
+              "explanation": "정답 해설 (2~3문장, 100% 한국어)",
+              "keyword": "핵심 경제 용어: 한 줄 개념 설명 (100% 한국어. KOSPI·GDP·ETF 같은 정착 영문 약어만 예외)"
             }
             """;
     }
