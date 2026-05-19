@@ -4,10 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
 import com.example.pinq_backend.config.AppConfig;
-import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
-import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.lang.reflect.Field;
 import java.time.Clock;
@@ -37,9 +35,6 @@ class UserStatsServiceTest {
     private UserService userService;
 
     @Mock
-    private SolvedHistoryRepository solvedHistoryRepository;
-
-    @Mock
     private UserQuizAttemptRepository userQuizAttemptRepository;
 
     @InjectMocks
@@ -62,18 +57,14 @@ class UserStatsServiceTest {
             .lastSolvedDate(TODAY)
             .build();
         setId(demoUser, 1L);
-        given(userService.findDemoUser()).willReturn(demoUser);
+        given(userService.synchronizeDemoStreak()).willReturn(demoUser);
     }
 
     @Test
     @DisplayName("여러 날의 풀이 이력을 올바르게 합산한다")
     void getStats_aggregatesHistoryCorrectly() {
-        SolvedHistory day1 = historyOf(TODAY.minusDays(2), 4, 3);
-        SolvedHistory day2 = historyOf(TODAY.minusDays(1), 4, 2);
-        SolvedHistory day3 = historyOf(TODAY, 4, 4);
-        List<SolvedHistory> all = List.of(day1, day2, day3);
-
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(all);
+        given(userQuizAttemptRepository.countByUserId(1L)).willReturn(12L);
+        given(userQuizAttemptRepository.countByUserIdAndFirstCorrectTrue(1L)).willReturn(9L);
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
@@ -89,7 +80,6 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("풀이 이력이 없으면 correctRate 는 0, totalSolved 는 0 이다")
     void getStats_zeroHistory_correctRateIsZero() {
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
@@ -108,7 +98,6 @@ class UserStatsServiceTest {
         Object[] oldestAttempt = new Object[]{TODAY.minusDays(55), 1L};
         Object[] todayCorrect  = new Object[]{TODAY,               1L};
 
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of(todayAttempt, oldestAttempt));
@@ -130,7 +119,6 @@ class UserStatsServiceTest {
         Object[] attemptRow = new Object[]{TODAY, 4L};  // 4회 시도
         Object[] correctRow = new Object[]{TODAY, 3L};  // 3개 정답 → min(3+1, 4) = 4
 
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.<Object[]>of(attemptRow));
@@ -146,7 +134,6 @@ class UserStatsServiceTest {
     @Test
     @DisplayName("활동이 없는 날은 activityGrid 에서 0 이다")
     void getStats_activityGrid_noActivityIsZero() {
-        given(solvedHistoryRepository.findByUserId(1L)).willReturn(List.of());
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
@@ -157,14 +144,6 @@ class UserStatsServiceTest {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
-
-    private SolvedHistory historyOf(LocalDate date, int solved, int correct) {
-        SolvedHistory h = SolvedHistory.create(demoUser, date);
-        for (int i = 0; i < solved; i++) {
-            h.record(i < correct);
-        }
-        return h;
-    }
 
     private static void setId(Object entity, Long id) {
         setField(entity, "id", id);
