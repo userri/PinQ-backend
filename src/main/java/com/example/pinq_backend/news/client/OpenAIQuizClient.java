@@ -1,5 +1,6 @@
 package com.example.pinq_backend.news.client;
 
+import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.config.properties.OpenAIProperties;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,15 +30,18 @@ public class OpenAIQuizClient {
     private final OpenAIProperties props;
     private final ObjectMapper objectMapper;
     private final AnthropicVerifyClient anthropicVerifyClient;
+    private final QuizRuleValidator ruleValidator;
 
     public OpenAIQuizClient(
             OpenAIProperties props,
             ObjectMapper objectMapper,
-            AnthropicVerifyClient anthropicVerifyClient
+            AnthropicVerifyClient anthropicVerifyClient,
+            QuizRuleValidator ruleValidator
     ) {
         this.props = props;
         this.objectMapper = objectMapper;
         this.anthropicVerifyClient = anthropicVerifyClient;
+        this.ruleValidator = ruleValidator;
         this.restClient = RestClient.builder()
                 .defaultHeader("Authorization", "Bearer " + props.apiKey())
                 .defaultHeader("Content-Type", "application/json")
@@ -46,19 +50,28 @@ public class OpenAIQuizClient {
 
     /**
      * 뉴스 기사로부터 퀴즈를 생성한다.
-     * 생성 후 별도 검증 호출로 정답의 경제학적 정확성을 확인한다.
      *
-     * @param title   뉴스 제목
-     * @param content 뉴스 본문 (스크래핑 성공 시 전문, 실패 시 description 스니펫)
-     * @return 생성된 퀴즈 DTO. 오류 또는 검증 실패 시 Optional.empty().
+     * 다단계 검증 흐름:
+     *  1. OpenAI로 퀴즈 생성 (system prompt에 카테고리 일치 + 1차원 인과 금지 + 좋은 예시 포함)
+     *  2. 룰베이스 검증 (자바, 무료) — 환율↑+수입↑ 같은 명백한 인과 위반 차단
+     *  3. Claude cross-model 검증 — 룰북에 없는 미묘한 오답·중복 정답 차단
+     *
+     * 룰베이스를 Claude 검증보다 먼저 두는 이유: 명백한 오답을 즉시 거르고
+     * Claude API 호출 비용을 절감하기 위함.
+     *
+     * @param title    뉴스 제목
+     * @param content  뉴스 본문 (스크래핑 성공 시 전문, 실패 시 description 스니펫)
+     * @param category 이 기사가 속한 카테고리. 퀴즈 주제가 이 카테고리와 일치해야 하며,
+     *                 기사가 카테고리와 무관하면 SKIP한다.
+     * @return 생성된 퀴즈 DTO. 오류 또는 어느 단계든 검증 실패 시 Optional.empty().
      */
-    public Optional<GeneratedQuizDto> generateQuiz(String title, String content) {
+    public Optional<GeneratedQuizDto> generateQuiz(String title, String content, Category category) {
         Map<String, Object> requestBody = Map.of(
                 "model", props.model(),
                 "max_tokens", MAX_TOKENS,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt()),
-                        Map.of("role", "user", "content", userPrompt(title, content))
+                        Map.of("role", "user", "content", userPrompt(title, content, category))
                 )
         );
 
@@ -72,10 +85,18 @@ public class OpenAIQuizClient {
             Optional<GeneratedQuizDto> quizOpt = parseQuiz(rawResponse);
             if (quizOpt.isEmpty()) return Optional.empty();
 
-            // 생성된 퀴즈의 정답을 별도 호출로 독립 검증
             GeneratedQuizDto quiz = quizOpt.get();
+
+            // 1차: 룰베이스 검증 — Claude 호출보다 먼저 돌려서 비용 절감.
+            QuizRuleValidator.Result ruleResult = ruleValidator.validate(quiz);
+            if (!ruleResult.valid()) {
+                log.warn("룰베이스 검증 실패, 퀴즈 폐기. reason={} question={}",
+                        ruleResult.reason(), quiz.getQuestion());
+                return Optional.empty();
+            }
+
+            // 2차: Claude cross-model 검증.
             if (!verifyAnswer(quiz)) {
-                log.warn("정답 검증 실패, 퀴즈 폐기. question={}", quiz.getQuestion());
                 return Optional.empty();
             }
 
@@ -182,59 +203,116 @@ public class OpenAIQuizClient {
             당신은 경제·금융 개념 교육용 퀴즈 출제 전문가입니다.
 
             ## 역할
-            뉴스 기사를 보고 ① 퀴즈 출제 적합 여부를 먼저 판단한 뒤,
-            ② 적합하면 경제 개념 중심의 퀴즈를 만들고, 부적합하면 SKIP을 반환합니다.
+            뉴스 기사를 보고 ① 퀴즈 출제 적합 여부를 판단하고, ② 적합하면 사용자 메시지에
+            지정된 카테고리에 정확히 맞는 경제 개념 퀴즈를 만듭니다. 부적합하면 SKIP.
 
-            ## SKIP 기준 (아래 중 하나라도 해당하면 SKIP)
-            - 특정 기업·브랜드·상품을 홍보하는 내용 (예: "A사의 신제품 특징은?")
-            - 특정 인물의 발언·의견·전망을 묻는 내용 (예: "○○ 회장이 말한 것은?")
-            - 독자에게 생소할 수 있는 전문 고유명사·약어가 설명 없이 핵심으로 사용된 내용 (예: KDDX, 특정 법안 번호 등)
+            ## 핵심 경제 인과 룰북 (정답 판정의 절대 기준)
+            아래 인과 방향과 충돌하는 보기는 절대 정답이 될 수 없습니다.
+
+            [환율] — 원/달러, 단기·명목 효과
+            - 환율 상승(원화 약세) → 수출 증가, 수입 감소, 수입물가 상승, 외국인 환차손
+            - 환율 하락(원화 강세) → 위와 정반대
+
+            [금리]
+            - 기준금리 인상 → 대출 수요 감소, 예금 매력 상승, 기존 채권 가격 하락,
+              변동금리 이자 부담 증가, 소비·투자 위축
+            - 기준금리 인하 → 위와 정반대
+
+            [주식·부동산]
+            - 금리 인상 → 주가·부동산 가격 하방 압력 (할인율 상승, 대출 부담 증가)
+            - 환율 상승 → 수출주 호재, 내수·수입 의존 업종 악재
+
+            ## SKIP 기준 (하나라도 해당하면 SKIP)
+            - 카테고리 불일치: 기사가 사용자 메시지의 지정 카테고리와 직접 관련 없음
+              (예: 카테고리가 EXCHANGE_RATE인데 기사가 금리 얘기만 하면 SKIP.
+               카테고리가 REAL_ESTATE인데 은행 예금금리 인상 기사면 SKIP.)
+            - 특정 기업·브랜드·상품을 홍보하는 내용
+            - 특정 인물의 발언·의견·전망을 묻는 내용
+            - 독자에게 생소할 수 있는 전문 고유명사·약어가 설명 없이 핵심으로 사용됨
             - 사건의 단순 수치(인원수, 날짜, 금액)를 묻는 내용
             - 사설·칼럼 등 필자의 주관적 분석이 주를 이루는 기사
 
-            ## 좋은 퀴즈 기준
-            - 금리·환율·증시·부동산 등 경제 원리나 개념을 학습할 수 있는 문제
-            - 기사가 계기가 되어 독자가 경제 지식을 넓힐 수 있는 문제
+            ## 금지 출제 패턴 (이전 출제에서 과다 반복되어 학습 가치가 낮음)
+            아래 패턴 또는 동치 표현은 절대 사용하지 마세요:
+            - "미국 국채 금리 상승 → 주식 시장 매력/투자 매력 감소" 류
+            - "변동금리 대출 + 금리 인상 → 이자 부담 증가" 류 (동어반복)
+            - "주담대 증가 → 가계부채 증가" 류
+            - "공포지수/변동성 지수 상승 → 투자자 매도/위험 회피" 류
+            - "X가 상승/인상되면 Y는?" 형식의 단순 1차원 직선 인과
+            대신 메커니즘(왜 그렇게 되는지), 정의(개념 자체), 비교(두 개념 차이),
+            응용(현실 사례·산업별 차별 영향)을 묻는 문제를 만드세요.
 
-            ## 정답 검증 (출제 후 반드시 수행)
-            정답 보기를 확정하기 전, 다음을 자문하세요:
-            "이 정답은 경제학 교과서 기준으로 반박의 여지 없이 옳은가?"
-            조금이라도 불확실하면 해당 문제를 만들지 말고 다른 각도로 출제하거나 SKIP하세요.
+            ## 좋은 문제 예시 (이 방향으로 출제)
+
+            예시 1 — 메커니즘:
+            Q. 한국은행이 기준금리를 인상하면 시중은행 예금금리가 따라 오르는 주된 이유는?
+            정답: 은행이 시장에서 자금을 조달하는 비용이 올라 예금으로 자금을 끌어와야 하기 때문
+
+            예시 2 — 개념 비교:
+            Q. 콜금리와 기준금리의 가장 큰 차이는?
+            정답: 콜금리는 은행 간 초단기 대차 시장에서 형성되는 실제 금리이고,
+                  기준금리는 한국은행이 정책적으로 결정해 발표하는 금리
+
+            예시 3 — 응용·차별 영향:
+            Q. 환율이 가파르게 상승하는 시기에 가장 타격을 받는 기업 유형은?
+            정답: 원자재·부품을 해외에서 수입해 국내에서 판매하는 내수 기반 제조업체
+
+            예시 4 — 부동산 메커니즘:
+            Q. 기준금리 인상이 아파트 매매가에 하방 압력을 가하는 1차 경로는?
+            정답: 주택담보대출 이자 부담 상승으로 매수 수요가 위축되기 때문
+
+            ## 나쁜 문제 예시 (절대 이렇게 출제하지 마세요)
+            - Q. 미국 국채 금리가 상승하면 주식시장에는 어떤 영향? (1차원 인과)
+            - Q. 금리가 인상되면 대출 수요는? (동어반복)
+            - Q. 변동금리 대출에서 금리가 오르면 이자 부담은? (동어반복)
+
+            ## 정답 자가 점검 (출제 직후 반드시 수행)
+            1. 정답이 위 "핵심 경제 인과 룰북"과 일치하는가?
+            2. 정답 외 3개 보기 중 옳다고 볼 여지가 있는 보기가 있는가? 있으면 폐기.
+            3. 문제가 "금지 출제 패턴"에 해당하는가? 해당하면 폐기.
+            4. 문제가 지정된 카테고리와 정확히 일치하는가? 아니면 SKIP.
+            하나라도 불확실하면 SKIP 또는 재출제.
 
             ## 응답 형식 (반드시 JSON만, 다른 텍스트 절대 금지)
 
             SKIP인 경우:
-            {"skip": true, "skipReason": "특정 인물의 발언을 묻는 내용으로 경제 개념 학습과 무관함"}
+            {"skip": true, "skipReason": "사유"}
 
             퀴즈 생성인 경우:
             {
               "skip": false,
-              "question": "퀴즈 문제 (개념을 묻는 질문)",
+              "question": "퀴즈 문제 (개념·메커니즘·비교·응용 중 하나)",
               "choices": [
                 {"orderNum": 1, "content": "보기1", "isAnswer": false},
                 {"orderNum": 2, "content": "보기2", "isAnswer": true},
                 {"orderNum": 3, "content": "보기3", "isAnswer": false},
                 {"orderNum": 4, "content": "보기4", "isAnswer": false}
               ],
-              "explanation": "정답 해설. 해당 경제 개념을 쉽게 풀어서 설명 (2~3문장)",
+              "explanation": "정답 해설 (2~3문장)",
               "keyword": "핵심 경제 용어: 한 줄 개념 설명"
             }
             """;
     }
 
-    private String userPrompt(String title, String content) {
+    private String userPrompt(String title, String content, Category category) {
         return """
             다음 뉴스 기사를 검토하고, SKIP 여부를 먼저 판단한 뒤 퀴즈를 출제하거나 SKIP을 반환하세요.
+
+            [퀴즈 카테고리]: %s (%s)
+            ※ 이 기사로 만들 퀴즈는 반드시 위 카테고리와 직접 관련된 경제 개념을 다뤄야 합니다.
+            ※ 기사가 카테고리와 무관하면(예: EXCHANGE_RATE 카테고리인데 기사가 금리 얘기만 함,
+              REAL_ESTATE 카테고리인데 은행 예금 기사) 반드시 SKIP하세요.
 
             뉴스 제목: %s
             뉴스 내용: %s
 
-            퀴즈 출제 시 주의사항:
-            - 문제는 뉴스의 특정 사실(숫자, 인명, 고유명사)이 아닌 경제 '개념'을 묻어야 합니다
-            - 이 기사가 계기가 되어 독자가 경제 원리를 배울 수 있는 방향으로 출제하세요
+            출제 시 주의사항:
+            - 시스템 프롬프트의 "금지 출제 패턴"을 절대 따라하지 마세요
+            - 시스템 프롬프트의 "좋은 문제 예시"처럼 메커니즘·정의·비교·응용 중 하나로 출제하세요
+            - 문제는 뉴스의 특정 사실(숫자·인명·고유명사)이 아닌 경제 '개념'을 묻으세요
             - 오답 보기는 그럴듯하지만 명확히 틀린 내용이어야 합니다
             - 한국어로 작성하세요
-            - 문제에 경제 변수를 사용할 때는 반드시 방향을 명시하세요 (예: "환율이 상승하면", "금리가 인하되면"). "환율 변동" 같은 방향성 없는 표현은 사용하지 마세요
-            """.formatted(title, content);
+            - 경제 변수를 사용할 때는 반드시 방향을 명시하세요 ("환율 상승" O, "환율 변동" X)
+            """.formatted(category.name(), category.getDisplayName(), title, content);
     }
 }
