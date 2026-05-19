@@ -9,29 +9,62 @@
 #   DB_PASSWORD=...
 #   JWT_SECRET=<openssl rand -hex 32>
 #   ADMIN_SECRET=<openssl rand -hex 32>
-#   NAVER_CLIENT_ID=...         # 선택 — 없으면 네이버 검색 기능만 비활성화
+#   NAVER_CLIENT_ID=...         # 선택
 #   NAVER_CLIENT_SECRET=...     # 선택
-#   OPENAI_API_KEY=...          # 선택 — 없으면 AI 해설 기능만 비활성화
+#   OPENAI_API_KEY=...          # 선택
+
+x-app-common: &app-common
+  image: ${DOCKERHUB_USERNAME}/pinq-backend:latest
+  environment:
+    SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+    DB_HOST: ${DB_HOST}
+    DB_PORT: ${DB_PORT:-3306}
+    DB_NAME: ${DB_NAME}
+    DB_USERNAME: ${DB_USERNAME}
+    DB_PASSWORD: ${DB_PASSWORD}
+    JWT_SECRET: ${JWT_SECRET}
+    ADMIN_SECRET: ${ADMIN_SECRET}
+    NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+    NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    REDIS_HOST: pinq-redis
+  restart: unless-stopped
+  depends_on:
+    - redis
+  networks:
+    - resources_default
 
 services:
-  app:
-    image: ${DOCKERHUB_USERNAME}/pinq-backend:latest
-    container_name: pinq-app
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_NAME: ${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      ADMIN_SECRET: ${ADMIN_SECRET}
-      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
-      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  redis:
+    image: redis:7-alpine
+    container_name: pinq-redis
     restart: unless-stopped
+    networks:
+      - resources_default
+
+  app-blue:
+    <<: *app-common
+    container_name: pinq-app-blue
+    expose:
+      - "8080"
+
+  app-green:
+    <<: *app-common
+    container_name: pinq-app-green
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx:alpine
+    container_name: pinq-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
+    restart: unless-stopped
+    depends_on:
+      - app-blue
     networks:
       - resources_default
 
