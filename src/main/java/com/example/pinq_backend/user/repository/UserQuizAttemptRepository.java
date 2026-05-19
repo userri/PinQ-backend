@@ -15,6 +15,10 @@ public interface UserQuizAttemptRepository extends JpaRepository<UserQuizAttempt
 
     Optional<UserQuizAttempt> findByUserIdAndQuizId(Long userId, Long quizId);
 
+    long countByUserId(Long userId);
+
+    long countByUserIdAndFirstCorrectTrue(Long userId);
+
     /** 사용자의 전체 풀이 이력 — 최신순. */
     List<UserQuizAttempt> findByUserIdOrderByCreatedAtDesc(Long userId);
 
@@ -60,6 +64,18 @@ public interface UserQuizAttemptRepository extends JpaRepository<UserQuizAttempt
         @Param("from") LocalDate from,
         @Param("to") LocalDate to
     );
+
+    /**
+     * 사용자가 첫 시도한 날짜 전체 목록을 반환한다.
+     * users.current_streak / max_streak 복구와 동기화의 기준 데이터다.
+     */
+    @Query(value = """
+        SELECT DISTINCT DATE(a.created_at)
+        FROM user_quiz_attempt a
+        WHERE a.user_id = :userId
+        ORDER BY DATE(a.created_at)
+        """, nativeQuery = true)
+    List<Object> findAttemptDatesByUserIdOrderByDateAsc(@Param("userId") Long userId);
 
     /**
      * 특정 quizId 목록에 속하는 attempt 만 조회한다.
