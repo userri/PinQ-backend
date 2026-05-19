@@ -54,7 +54,11 @@ public class QuizService {
         List<Long> quizIds = quizzes.stream().map(Quiz::getId).toList();
         Map<Long, UserQuizAttempt> attemptByQuizId = userQuizAttemptRepository
             .findByUserIdAndQuizIdIn(userId, quizIds).stream()
-            .collect(Collectors.toMap(UserQuizAttempt::getQuizId, Function.identity()));
+            .collect(Collectors.toMap(
+                UserQuizAttempt::getQuizId,
+                Function.identity(),
+                (a, b) -> a // (user, quiz) UK 보장으로 실제 중복은 없음. BookmarkService 와 일관성 유지.
+            ));
 
         // 전체 퀴즈를 반환하되 attempt 가 있으면 solved=true, correct=firstCorrect 로 채움
         return quizzes.stream()
