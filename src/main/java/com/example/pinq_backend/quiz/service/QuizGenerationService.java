@@ -15,11 +15,15 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -169,14 +173,11 @@ public class QuizGenerationService {
                                         .build()
                         ));
 
-                // Choice 리스트 생성
-                List<Choice> choices = dto.getChoices().stream()
-                        .map(c -> Choice.builder()
-                                .orderNum(c.getOrderNum())
-                                .content(c.getContent())
-                                .answer(c.isAnswer())
-                                .build())
-                        .toList();
+                // Choice 리스트 생성: 생성 AI의 정답 위치 편향을 저장 전에 보정한다.
+                List<Choice> choices = buildChoicesForDisplay(
+                        dto,
+                        new Random(choiceShuffleSeed(dto))
+                );
 
                 // Quiz 저장
                 quizRepository.save(
@@ -214,6 +215,33 @@ public class QuizGenerationService {
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .count();
         return answerCount == 1;
+    }
+
+    static List<Choice> buildChoicesForDisplay(GeneratedQuizDto dto, Random random) {
+        List<GeneratedQuizDto.ChoiceDto> shuffled = new ArrayList<>(dto.getChoices());
+        Collections.shuffle(shuffled, random);
+
+        List<Choice> choices = new ArrayList<>(shuffled.size());
+        for (int i = 0; i < shuffled.size(); i++) {
+            GeneratedQuizDto.ChoiceDto c = shuffled.get(i);
+            choices.add(Choice.builder()
+                    .orderNum(i + 1)
+                    .content(c.getContent())
+                    .answer(c.isAnswer())
+                    .build());
+        }
+        return choices;
+    }
+
+    static long choiceShuffleSeed(GeneratedQuizDto dto) {
+        return Objects.hash(
+                dto.getQuestion(),
+                dto.getExplanation(),
+                dto.getKeyword(),
+                dto.getChoices().stream()
+                        .map(GeneratedQuizDto.ChoiceDto::getContent)
+                        .toList()
+        );
     }
 
     /**

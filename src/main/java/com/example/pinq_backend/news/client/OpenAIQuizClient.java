@@ -282,13 +282,15 @@ public class OpenAIQuizClient {
             {"skip": true, "skipReason": "사유"}
 
             퀴즈 생성인 경우 (모든 한국어 필드는 100% 한국어로 작성. 영어 문장 혼용 금지):
+            ※ 정답 위치는 orderNum=2로 고정하지 말고, 문제마다 1~4 중 하나로 고르게 분산하세요.
+               아래 true 위치는 JSON 형식 예시일 뿐이며 그대로 따라 하면 안 됩니다.
             {
               "skip": false,
               "question": "퀴즈 문제 (개념·메커니즘·비교·응용 중 하나, 100% 한국어)",
               "choices": [
                 {"orderNum": 1, "content": "보기1 (100% 한국어)", "isAnswer": false},
-                {"orderNum": 2, "content": "보기2 (100% 한국어)", "isAnswer": true},
-                {"orderNum": 3, "content": "보기3 (100% 한국어)", "isAnswer": false},
+                {"orderNum": 2, "content": "보기2 (100% 한국어)", "isAnswer": false},
+                {"orderNum": 3, "content": "보기3 (100% 한국어)", "isAnswer": true},
                 {"orderNum": 4, "content": "보기4 (100% 한국어)", "isAnswer": false}
               ],
               "explanation": "정답 해설 (2~3문장, 100% 한국어)",
