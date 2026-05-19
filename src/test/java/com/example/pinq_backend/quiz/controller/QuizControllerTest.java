@@ -67,9 +67,10 @@ class QuizControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/quizzes/today 는 200 과 퀴즈 목록을 반환한다")
+    @DisplayName("GET /api/quizzes/today 는 200 과 퀴즈 목록을 solved/correct 포함해 반환한다")
     void getTodayQuizzes_returnsJson() throws Exception {
         given(quizService.getTodayQuizzes(anyLong())).willReturn(List.of(
+            // 미풀이
             new QuizResponse(
                 1L, "INTEREST_RATE", "금리", "금리 문제",
                 List.of(
@@ -77,23 +78,43 @@ class QuizControllerTest {
                     new ChoiceResponse(2L, 2, "보기2"),
                     new ChoiceResponse(3L, 3, "보기3"),
                     new ChoiceResponse(4L, 4, "보기4")
-                )
+                ),
+                false,
+                null
+            ),
+            // 풀이 완료 (정답)
+            new QuizResponse(
+                2L, "EXCHANGE_RATE", "환율", "환율 문제",
+                List.of(
+                    new ChoiceResponse(5L, 1, "보기1"),
+                    new ChoiceResponse(6L, 2, "보기2"),
+                    new ChoiceResponse(7L, 3, "보기3"),
+                    new ChoiceResponse(8L, 4, "보기4")
+                ),
+                true,
+                true
             )
         ));
 
         mockMvc.perform(get("/api/quizzes/today"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$.length()").value(2))
             .andExpect(jsonPath("$[0].id").value(1))
             .andExpect(jsonPath("$[0].category").value("INTEREST_RATE"))
             .andExpect(jsonPath("$[0].categoryDisplayName").value("금리"))
             .andExpect(jsonPath("$[0].question").value("금리 문제"))
             .andExpect(jsonPath("$[0].choices.length()").value(4))
+            .andExpect(jsonPath("$[0].solved").value(false))
+            // correct 는 미풀이 시 null — 키는 존재하되 값은 null
+            .andExpect(jsonPath("$[0].correct").value(org.hamcrest.Matchers.nullValue()))
             // 정답/해설/keyword/article 정보가 today 응답에 새지 않아야 함
             .andExpect(jsonPath("$[0].correctChoiceId").doesNotExist())
             .andExpect(jsonPath("$[0].explanation").doesNotExist())
             .andExpect(jsonPath("$[0].keyword").doesNotExist())
-            .andExpect(jsonPath("$[0].article").doesNotExist());
+            .andExpect(jsonPath("$[0].article").doesNotExist())
+            // 풀이 완료 항목은 solved=true, correct=true
+            .andExpect(jsonPath("$[1].solved").value(true))
+            .andExpect(jsonPath("$[1].correct").value(true));
     }
 
     @Test

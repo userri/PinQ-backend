@@ -48,6 +48,7 @@ public class UserStatsService {
 
         // ── 스트릭 ────────────────────────────────────────────────
         int streak = user.getCurrentStreak();
+        int maxStreak = user.getMaxStreak();
 
         // ── 누적 풀이 / 정답률 ────────────────────────────────────
         List<SolvedHistory> allHistory = solvedHistoryRepository.findByUserId(userId);
@@ -104,7 +105,7 @@ public class UserStatsService {
             activityGrid.add(intensity);
         }
 
-        return new UserStatsResponse(user.getNickname(), streak, totalSolved, correctRate, activityGrid);
+        return new UserStatsResponse(user.getNickname(), streak, maxStreak, totalSolved, correctRate, activityGrid);
     }
 
     /**
