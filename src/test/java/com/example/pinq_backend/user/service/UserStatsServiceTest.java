@@ -68,6 +68,9 @@ class UserStatsServiceTest {
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.of());
 
         UserStatsResponse result = userStatsService.getStats();
 
@@ -81,6 +84,9 @@ class UserStatsServiceTest {
     @DisplayName("풀이 이력이 없으면 correctRate 는 0, totalSolved 는 0 이다")
     void getStats_zeroHistory_correctRateIsZero() {
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.of());
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 
@@ -135,6 +141,9 @@ class UserStatsServiceTest {
     @DisplayName("활동이 없는 날은 activityGrid 에서 0 이다")
     void getStats_activityGrid_noActivityIsZero() {
         given(userQuizAttemptRepository.countAttemptsByDateBetween(
+            1L, TODAY.minusDays(55), TODAY)
+        ).willReturn(List.of());
+        given(userQuizAttemptRepository.countFirstCorrectByDateBetween(
             1L, TODAY.minusDays(55), TODAY)
         ).willReturn(List.of());
 
