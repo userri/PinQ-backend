@@ -83,6 +83,7 @@ class UserStatsServiceTest {
         assertThat(result.totalSolved()).isEqualTo(12);
         assertThat(result.correctRate()).isEqualTo(9f / 12f);
         assertThat(result.streak()).isEqualTo(3);
+        assertThat(result.maxStreak()).isEqualTo(5);
     }
 
     @Test
