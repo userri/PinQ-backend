@@ -46,6 +46,10 @@ public class AnthropicVerifyClient {
                 .defaultHeader("anthropic-version", ANTHROPIC_VERSION)
                 .defaultHeader("content-type", "application/json")
                 .build();
+        if (props.apiKey() == null || props.apiKey().isBlank()) {
+            log.warn("[AnthropicVerifyClient] ANTHROPIC_API_KEY 가 설정되지 않았습니다. "
+                    + "퀴즈 검증이 무력화되며 모든 verify() 호출은 fail-open(true)으로 처리됩니다.");
+        }
     }
 
     /**
@@ -58,6 +62,12 @@ public class AnthropicVerifyClient {
      * @return true면 정답 신뢰 가능 또는 검증 호출 실패(fail-open), false면 폐기 대상
      */
     public boolean verify(String verifyPrompt) {
+        // API 키 미설정 시 불필요한 HTTP 호출 없이 즉시 fail-open 반환.
+        // 경고는 생성자에서 1회 출력하므로 여기서는 별도 로그 없이 통과.
+        if (props.apiKey() == null || props.apiKey().isBlank()) {
+            return true;
+        }
+
         Map<String, Object> requestBody = Map.of(
                 "model", props.model(),
                 "max_tokens", MAX_TOKENS,
