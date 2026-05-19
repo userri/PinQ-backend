@@ -32,9 +32,17 @@ fi
 
 echo "▶ 현재 라이브: $LIVE  →  배포 대상: $NEXT  (태그: $IMAGE_TAG)"
 
+# ── 외부 네트워크 보장 ──────────────────────────────────────────────────
+docker network inspect resources_default >/dev/null 2>&1 \
+  || docker network create resources_default
+
 # ── 이미지 pull ────────────────────────────────────────────────────────────
 echo "▶ 이미지 pull 중 (IMAGE_TAG=${IMAGE_TAG})..."
 APP_IMAGE_TAG="${IMAGE_TAG}" docker compose pull app-${NEXT}
+
+# ── 의존 서비스(redis) 보장 ───────────────────────────────────────────────
+echo "▶ redis 컨테이너 확인 및 시동..."
+docker compose up -d --no-deps redis
 
 # ── 대기 슬롯 컨테이너 교체 ──────────────────────────────────────────────────
 echo "▶ pinq-app-${NEXT} 시작 (IMAGE_TAG=${IMAGE_TAG})..."
