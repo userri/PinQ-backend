@@ -42,3 +42,6 @@ out/
 !.env.example
 application-local.properties
 docker-compose.override.yml
+
+### Runtime deployment state ###
+nginx/upstream.conf
