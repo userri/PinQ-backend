@@ -106,4 +106,11 @@ public class User extends BaseTimeEntity {
     public void updateNickname(String newNickname) {
         this.nickname = newNickname;
     }
+
+    /** 풀이 이력에서 재계산한 streak 값을 users 테이블 캐시 필드에 반영한다. */
+    public void syncStreak(int currentStreak, int maxStreak, LocalDate lastSolvedDate) {
+        this.currentStreak = Math.max(currentStreak, 0);
+        this.maxStreak = Math.max(maxStreak, this.currentStreak);
+        this.lastSolvedDate = lastSolvedDate;
+    }
 }

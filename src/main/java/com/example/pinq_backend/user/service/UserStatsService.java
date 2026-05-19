@@ -1,9 +1,7 @@
 package com.example.pinq_backend.user.service;
 
-import com.example.pinq_backend.user.domain.SolvedHistory;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
-import com.example.pinq_backend.user.repository.SolvedHistoryRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -27,33 +25,29 @@ public class UserStatsService {
     private static final int MAX_INTENSITY = 4;
 
     private final UserService userService;
-    private final SolvedHistoryRepository solvedHistoryRepository;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
     private final Clock clock;
 
     /** Phase 3 표준: 인증된 userId 로 통계를 조회한다. */
+    @Transactional
     public UserStatsResponse getStats(Long userId) {
-        User user = userService.findById(userId);
+        User user = userService.synchronizeStreak(userId);
         return buildStats(user);
     }
 
     /** Phase 2 하위 호환: demo 유저 통계를 반환한다. */
+    @Transactional
     public UserStatsResponse getStats() {
-        User user = userService.findDemoUser();
+        User user = userService.synchronizeDemoStreak();
         return buildStats(user);
     }
 
     private UserStatsResponse buildStats(User user) {
         Long userId = user.getId();
 
-        // ── 스트릭 ────────────────────────────────────────────────
-        int streak = user.getCurrentStreak();
-        int maxStreak = user.getMaxStreak();
-
         // ── 누적 풀이 / 정답률 ────────────────────────────────────
-        List<SolvedHistory> allHistory = solvedHistoryRepository.findByUserId(userId);
-        int totalSolved  = allHistory.stream().mapToInt(SolvedHistory::getSolvedCount).sum();
-        int totalCorrect = allHistory.stream().mapToInt(SolvedHistory::getCorrectCount).sum();
+        int totalSolved = Math.toIntExact(userQuizAttemptRepository.countByUserId(userId));
+        int totalCorrect = Math.toIntExact(userQuizAttemptRepository.countByUserIdAndFirstCorrectTrue(userId));
         float correctRate = totalSolved > 0 ? (float) totalCorrect / totalSolved : 0f;
 
         // ── activityGrid (최근 56일) ──────────────────────────────
@@ -105,7 +99,14 @@ public class UserStatsService {
             activityGrid.add(intensity);
         }
 
-        return new UserStatsResponse(user.getNickname(), streak, maxStreak, totalSolved, correctRate, activityGrid);
+        return new UserStatsResponse(
+            user.getNickname(),
+            user.getCurrentStreak(),
+            user.getMaxStreak(),
+            totalSolved,
+            correctRate,
+            activityGrid
+        );
     }
 
     /**
@@ -118,4 +119,3 @@ public class UserStatsService {
         return LocalDate.parse(obj.toString()); // fallback
     }
 }
-

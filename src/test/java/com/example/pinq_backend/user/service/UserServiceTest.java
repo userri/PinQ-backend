@@ -21,6 +21,8 @@ import com.example.pinq_backend.user.repository.UserRepository;
 import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -185,7 +187,7 @@ class UserServiceTest {
 
         userService.recordAnswer(QUIZ_1, null, true);
 
-        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(solvedHistoryRepository).saveAndFlush(any(SolvedHistory.class));
         verify(userQuizAttemptRepository).saveAndFlush(any(UserQuizAttempt.class));
         assertThat(captured[0].getSolvedCount()).isEqualTo(1);
         assertThat(captured[0].getCorrectCount()).isEqualTo(1);
@@ -200,7 +202,7 @@ class UserServiceTest {
 
         userService.recordAnswer(QUIZ_1, null, false);
 
-        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(solvedHistoryRepository).saveAndFlush(any(SolvedHistory.class));
         assertThat(captured[0].getSolvedCount()).isEqualTo(1);
         assertThat(captured[0].getCorrectCount()).isZero();
     }
@@ -214,7 +216,7 @@ class UserServiceTest {
 
         userService.recordAnswer(QUIZ_2, null, true);
 
-        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(solvedHistoryRepository).saveAndFlush(any(SolvedHistory.class));
         assertThat(existing.getSolvedCount()).isEqualTo(3);
         assertThat(existing.getCorrectCount()).isEqualTo(2);
     }
@@ -228,7 +230,7 @@ class UserServiceTest {
 
         userService.recordAnswer(QUIZ_2, null, false);
 
-        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(solvedHistoryRepository).saveAndFlush(any(SolvedHistory.class));
         assertThat(existing.getSolvedCount()).isEqualTo(3);
         assertThat(existing.getCorrectCount()).isEqualTo(2);
     }
@@ -240,11 +242,13 @@ class UserServiceTest {
         stubExistingUser(user);
         given(userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), QUIZ_1))
                 .willReturn(true);
+        given(userQuizAttemptRepository.findAttemptDatesByUserIdOrderByDateAsc(user.getId()))
+                .willReturn(attemptDatesFrom(existingStreakDates(user)));
 
         userService.recordAnswer(QUIZ_1, null, true);
 
         verify(userQuizAttemptRepository, never()).saveAndFlush(any());
-        verify(solvedHistoryRepository, never()).save(any());
+        verify(solvedHistoryRepository, never()).saveAndFlush(any());
         verify(userRepository, never()).save(any());
         assertThat(user.getCurrentStreak()).isEqualTo(3);
     }
@@ -258,12 +262,14 @@ class UserServiceTest {
         stubExistingUser(user);
         given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
                 .willThrow(new DataIntegrityViolationException("uk_user_quiz_attempt"));
+        given(userQuizAttemptRepository.findAttemptDatesByUserIdOrderByDateAsc(user.getId()))
+                .willReturn(attemptDatesIncludingToday(user));
 
         userService.recordAnswer(QUIZ_1, null, true);
 
-        verify(solvedHistoryRepository, never()).save(any());
+        verify(solvedHistoryRepository, never()).saveAndFlush(any());
         verify(userRepository, never()).save(any());
-        assertThat(user.getCurrentStreak()).isEqualTo(2);
+        assertThat(user.getCurrentStreak()).isEqualTo(3);
     }
 
     // ── recordAnswer — streak ─────────────────────────────────────────────────
@@ -333,12 +339,12 @@ class UserServiceTest {
         userService.recordAnswer(QUIZ_1, null, true);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository, org.mockito.Mockito.times(2)).save(userCaptor.capture());
+        verify(userRepository).save(userCaptor.capture());
         assertThat(userCaptor.getAllValues().get(0).getNickname()).isEqualTo("demo");
 
         assertThat(created.getCurrentStreak()).isEqualTo(1);
 
-        verify(solvedHistoryRepository).save(any(SolvedHistory.class));
+        verify(solvedHistoryRepository).saveAndFlush(any(SolvedHistory.class));
         assertThat(captured[0].getSolvedCount()).isEqualTo(1);
         assertThat(captured[0].getCorrectCount()).isEqualTo(1);
     }
@@ -376,11 +382,13 @@ class UserServiceTest {
                 .willReturn(Optional.empty());
         given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
                 .willAnswer(inv -> inv.getArgument(0));
-        given(solvedHistoryRepository.save(any(SolvedHistory.class)))
+        given(solvedHistoryRepository.saveAndFlush(any(SolvedHistory.class)))
                 .willAnswer(inv -> {
                     captured[0] = inv.getArgument(0);
                     return captured[0];
                 });
+        given(userQuizAttemptRepository.findAttemptDatesByUserIdOrderByDateAsc(user.getId()))
+                .willReturn(attemptDatesIncludingToday(user));
         return captured;
     }
 
@@ -396,8 +404,37 @@ class UserServiceTest {
                 .willReturn(Optional.of(history));
         given(userQuizAttemptRepository.saveAndFlush(any(UserQuizAttempt.class)))
                 .willAnswer(inv -> inv.getArgument(0));
-        given(solvedHistoryRepository.save(any(SolvedHistory.class))).willReturn(history);
+        given(solvedHistoryRepository.saveAndFlush(any(SolvedHistory.class))).willReturn(history);
+        given(userQuizAttemptRepository.findAttemptDatesByUserIdOrderByDateAsc(user.getId()))
+                .willReturn(attemptDatesIncludingToday(user));
         return history;
+    }
+
+    private List<Object> attemptDatesIncludingToday(User user) {
+        List<LocalDate> dates = new ArrayList<>(existingStreakDates(user));
+        if (!dates.contains(TODAY)) {
+            dates.add(TODAY);
+        }
+        dates.sort(LocalDate::compareTo);
+        return attemptDatesFrom(dates);
+    }
+
+    private List<Object> attemptDatesFrom(List<LocalDate> dates) {
+        return new ArrayList<>(dates);
+    }
+
+    private List<LocalDate> existingStreakDates(User user) {
+        LocalDate last = user.getLastSolvedDate();
+        int streak = user.getCurrentStreak();
+        if (last == null || streak <= 0) {
+            return List.of();
+        }
+
+        List<LocalDate> dates = new ArrayList<>();
+        for (int i = streak - 1; i >= 0; i--) {
+            dates.add(last.minusDays(i));
+        }
+        return dates;
     }
 
     private static void setField(Object target, String fieldName, Object value) {

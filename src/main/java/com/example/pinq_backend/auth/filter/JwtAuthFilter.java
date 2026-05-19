@@ -19,8 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Authorization: Bearer <token> 헤더가 있고 토큰이 유효하면
  * UsernamePasswordAuthenticationToken(userId, null, []) 을 SecurityContext 에 등록한다.
  *
- * 헤더가 없거나 토큰이 유효하지 않으면 SecurityContext 를 비운 채로 다음 필터로 넘긴다.
- * 인증이 필요한 엔드포인트는 SecurityConfig 의 authorizeHttpRequests 로 제어한다.
+ * Authorization 헤더가 없으면 다음 필터로 넘겨 SecurityConfig 의 permitAll/demo fallback
+ * 정책을 따르게 한다. 반대로 Bearer 토큰이 있지만 유효하지 않으면 401 을 반환해
+ * 만료·위조 토큰 요청이 demo 유저로 처리되지 않도록 차단한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -38,7 +39,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (token != null && jwtTokenProvider.isValid(token)) {
+        if (token != null) {
             try {
                 Long userId = jwtTokenProvider.getUserId(token);
                 UsernamePasswordAuthenticationToken auth =
@@ -47,6 +48,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             } catch (Exception e) {
                 log.debug("JWT 파싱 오류: {}", e.getMessage());
                 SecurityContextHolder.clearContext();
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
+                return;
             }
         }
 
