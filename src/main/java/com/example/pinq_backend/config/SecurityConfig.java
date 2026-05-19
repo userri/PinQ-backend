@@ -44,6 +44,7 @@ public class SecurityConfig {
                         // 로그인/회원가입 — 인증 불필요
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users/register").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/me/stats").permitAll()
                         // 개발/문서 도구
                         .requestMatchers(
                                 "/swagger-ui/**",
