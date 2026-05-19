@@ -38,7 +38,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = extractToken(request);
 
-        if (token != null && jwtTokenProvider.isValid(token)) {
+        if (token != null) {
             try {
                 Long userId = jwtTokenProvider.getUserId(token);
                 UsernamePasswordAuthenticationToken auth =
@@ -47,6 +47,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             } catch (Exception e) {
                 log.debug("JWT 파싱 오류: {}", e.getMessage());
                 SecurityContextHolder.clearContext();
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
+                return;
             }
         }
 
