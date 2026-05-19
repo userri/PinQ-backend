@@ -10,9 +10,11 @@ import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.auth.service.KakaoOAuthService;
 import com.example.pinq_backend.auth.service.KakaoOAuthService.KakaoOAuthException;
 import com.example.pinq_backend.auth.service.KakaoOAuthService.KakaoUserInfo;
+import com.example.pinq_backend.auth.service.RefreshTokenService;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.service.UserService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,10 +27,10 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * 소셜 로그인 엔드포인트.
  *
- * POST /api/auth/kakao  — Kakao accessToken → PinQ JWT
- * POST /api/auth/google — Google idToken   → PinQ JWT
- *
- * 두 엔드포인트 모두 인증 없이 접근 가능 (SecurityConfig 에서 permitAll).
+ * POST /api/auth/kakao   — Kakao accessToken → PinQ access + refresh token
+ * POST /api/auth/google  — Google idToken    → PinQ access + refresh token
+ * POST /api/auth/refresh — refresh token     → 새 access + refresh token (rotation)
+ * POST /api/auth/logout  — refresh token 삭제 (서버 측 무효화)
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -39,14 +41,8 @@ public class AuthController {
     private final GoogleOAuthService googleOAuthService;
     private final UserService userService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenService refreshTokenService;
 
-    /**
-     * 카카오 로그인.
-     *
-     * @param request { "accessToken": "..." } — Kakao SDK 발급 액세스 토큰
-     * @return 200 OK + { accessToken, tokenType, expiresIn, nickname }
-     *         401 Unauthorized — 카카오 토큰 검증 실패
-     */
     @PostMapping("/kakao")
     public ResponseEntity<TokenResponse> kakaoLogin(
             @Valid @RequestBody KakaoLoginRequest request
@@ -59,20 +55,9 @@ public class AuthController {
         }
 
         User user = userService.loginWithOAuth("kakao", kakaoUser.kakaoId(), kakaoUser.nickname());
-        String jwt = jwtTokenProvider.createToken(user.getId(), user.getNickname());
-
-        return ResponseEntity.ok(
-                TokenResponse.of(jwt, jwtTokenProvider.getExpirationMs(), user.getNickname())
-        );
+        return ResponseEntity.ok(issueTokens(user));
     }
 
-    /**
-     * 구글 로그인.
-     *
-     * @param request { "idToken": "..." } — Google Credential Manager 발급 ID Token
-     * @return 200 OK + { accessToken, tokenType, expiresIn, nickname }
-     *         401 Unauthorized — 구글 토큰 검증 실패
-     */
     @PostMapping("/google")
     public ResponseEntity<TokenResponse> googleLogin(
             @Valid @RequestBody GoogleLoginRequest request
@@ -85,10 +70,53 @@ public class AuthController {
         }
 
         User user = userService.loginWithOAuth("google", googleUser.googleId(), googleUser.nickname());
-        String jwt = jwtTokenProvider.createToken(user.getId(), user.getNickname());
-
-        return ResponseEntity.ok(
-                TokenResponse.of(jwt, jwtTokenProvider.getExpirationMs(), user.getNickname())
-        );
+        return ResponseEntity.ok(issueTokens(user));
     }
+
+    /**
+     * Refresh token으로 새 access + refresh token을 발급한다 (rotation).
+     *
+     * @param request { "userId": 1, "refreshToken": "uuid-..." }
+     * @return 200 OK + 새 TokenResponse  |  401 토큰 불일치/만료
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<TokenResponse> refresh(
+            @Valid @RequestBody RefreshRequest request
+    ) {
+        if (!refreshTokenService.validate(request.userId(), request.refreshToken())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh token입니다");
+        }
+
+        User user = userService.findById(request.userId());
+
+        // 기존 토큰 삭제 후 새 토큰 발급 (rotation)
+        refreshTokenService.delete(request.userId());
+        return ResponseEntity.ok(issueTokens(user));
+    }
+
+    /**
+     * 로그아웃 — Redis의 refresh token을 삭제해 서버 측에서 무효화한다.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
+        refreshTokenService.delete(request.userId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── 내부 헬퍼 ────────────────────────────────────────────────────────────
+
+    private TokenResponse issueTokens(User user) {
+        String accessToken  = jwtTokenProvider.createToken(user.getId(), user.getNickname());
+        String refreshToken = refreshTokenService.issue(user.getId());
+        return TokenResponse.of(user.getId(), accessToken, refreshToken, jwtTokenProvider.getExpirationMs(), user.getNickname());
+    }
+
+    // ── 요청 DTO ─────────────────────────────────────────────────────────────
+
+    public record RefreshRequest(
+            Long userId,
+            @NotBlank String refreshToken
+    ) {}
+
+    public record LogoutRequest(Long userId) {}
 }
