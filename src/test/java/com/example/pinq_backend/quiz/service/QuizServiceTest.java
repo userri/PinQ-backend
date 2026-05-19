@@ -4,10 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -20,6 +23,7 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
 import java.time.Clock;
@@ -74,14 +78,15 @@ class QuizServiceTest {
     }
 
     @Test
-    @DisplayName("오늘의 퀴즈 목록을 반환한다 — category 는 article 에서 파생")
+    @DisplayName("오늘의 퀴즈 목록을 반환한다 — category 는 article 에서 파생, 미풀이는 solved=false")
     void getTodayQuizzes_returnsListWithCategoryFromArticle() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
         given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
-        // 아직 아무것도 안 푼 상태
-        given(userQuizAttemptRepository.existsByUserIdAndQuizId(anyLong(), anyLong())).willReturn(false);
+        // 아직 아무것도 안 푼 상태 → attempt 조회 결과 비어 있음
+        given(userQuizAttemptRepository.findByUserIdAndQuizIdIn(anyLong(), anyList()))
+            .willReturn(List.of());
 
         List<QuizResponse> result = quizService.getTodayQuizzes(1L);
 
@@ -91,39 +96,61 @@ class QuizServiceTest {
         assertThat(result.get(0).categoryDisplayName()).isEqualTo("금리");
         assertThat(result.get(0).question()).isEqualTo("금리 문제");
         assertThat(result.get(0).choices()).hasSize(4);
+        assertThat(result.get(0).solved()).isFalse();
+        assertThat(result.get(0).correct()).isNull();
         assertThat(result.get(1).question()).isEqualTo("환율 문제");
+        assertThat(result.get(1).solved()).isFalse();
     }
 
     @Test
-    @DisplayName("이미 푼 퀴즈는 오늘의 목록에서 제외된다")
-    void getTodayQuizzes_excludesAlreadyAttemptedQuizzes() {
+    @DisplayName("이미 푼 퀴즈도 목록에 포함되지만 solved=true 와 correct 가 채워진다")
+    void getTodayQuizzes_marksAttemptedQuizzesAsSolved() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
         given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
-        // q1은 이미 풀었고, q2는 아직 안 푼 상태
-        given(userQuizAttemptRepository.existsByUserIdAndQuizId(1L, 1L)).willReturn(true);
-        given(userQuizAttemptRepository.existsByUserIdAndQuizId(1L, 2L)).willReturn(false);
+        // q1 은 첫 시도에 정답으로 풀었고, q2 는 아직 안 푼 상태
+        UserQuizAttempt q1Attempt = mock(UserQuizAttempt.class);
+        given(q1Attempt.getQuizId()).willReturn(1L);
+        given(q1Attempt.isFirstCorrect()).willReturn(true);
+        given(userQuizAttemptRepository.findByUserIdAndQuizIdIn(eq(1L), anyList()))
+            .willReturn(List.of(q1Attempt));
 
         List<QuizResponse> result = quizService.getTodayQuizzes(1L);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).id()).isEqualTo(2L);
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).id()).isEqualTo(1L);
+        assertThat(result.get(0).solved()).isTrue();
+        assertThat(result.get(0).correct()).isTrue();
+        assertThat(result.get(1).id()).isEqualTo(2L);
+        assertThat(result.get(1).solved()).isFalse();
+        assertThat(result.get(1).correct()).isNull();
     }
 
     @Test
-    @DisplayName("모든 퀴즈를 풀었으면 빈 목록을 반환한다")
-    void getTodayQuizzes_returnsEmptyWhenAllAttempted() {
+    @DisplayName("모든 퀴즈를 풀었어도 전체 목록을 반환한다 (각 항목은 solved=true)")
+    void getTodayQuizzes_returnsAllEvenWhenAllAttempted() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
         given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
-        // 모두 이미 푼 상태
-        given(userQuizAttemptRepository.existsByUserIdAndQuizId(anyLong(), anyLong())).willReturn(true);
+        // q1 은 정답으로 풀었고 q2 는 오답으로 풀었음
+        UserQuizAttempt a1 = mock(UserQuizAttempt.class);
+        given(a1.getQuizId()).willReturn(1L);
+        given(a1.isFirstCorrect()).willReturn(true);
+        UserQuizAttempt a2 = mock(UserQuizAttempt.class);
+        given(a2.getQuizId()).willReturn(2L);
+        given(a2.isFirstCorrect()).willReturn(false);
+        given(userQuizAttemptRepository.findByUserIdAndQuizIdIn(eq(1L), anyList()))
+            .willReturn(List.of(a1, a2));
 
         List<QuizResponse> result = quizService.getTodayQuizzes(1L);
 
-        assertThat(result).isEmpty();
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).solved()).isTrue();
+        assertThat(result.get(0).correct()).isTrue();
+        assertThat(result.get(1).solved()).isTrue();
+        assertThat(result.get(1).correct()).isFalse();
     }
 
     @Test
