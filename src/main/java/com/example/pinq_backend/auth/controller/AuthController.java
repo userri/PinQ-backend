@@ -31,6 +31,10 @@ import org.springframework.web.server.ResponseStatusException;
  * POST /api/auth/google  — Google idToken    → PinQ access + refresh token
  * POST /api/auth/refresh — refresh token     → 새 access + refresh token (rotation)
  * POST /api/auth/logout  — refresh token 삭제 (서버 측 무효화)
+ *
+ * refresh/logout 은 클라이언트가 userId를 보내지 않는다.
+ * refreshToken 자체를 Redis key로 사용해 userId를 역조회하므로,
+ * userId 추측 공격 경로가 없고 API도 단순하다.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -76,30 +80,38 @@ public class AuthController {
     /**
      * Refresh token으로 새 access + refresh token을 발급한다 (rotation).
      *
-     * @param request { "userId": 1, "refreshToken": "uuid-..." }
+     * 클라이언트는 refreshToken만 보내면 된다 — userId 불필요.
+     * Redis에서 token → userId를 역조회하므로 userId 추측 공격이 불가능하다.
+     *
+     * @param request { "refreshToken": "uuid-..." }
      * @return 200 OK + 새 TokenResponse  |  401 토큰 불일치/만료
      */
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
             @Valid @RequestBody RefreshRequest request
     ) {
-        if (!refreshTokenService.validate(request.userId(), request.refreshToken())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh token입니다");
-        }
+        Long userId = refreshTokenService.resolveUserId(request.refreshToken())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED, "유효하지 않은 refresh token입니다"));
 
-        User user = userService.findById(request.userId());
+        User user = userService.findById(userId);
 
         // 기존 토큰 삭제 후 새 토큰 발급 (rotation)
-        refreshTokenService.delete(request.userId());
+        refreshTokenService.delete(request.refreshToken());
         return ResponseEntity.ok(issueTokens(user));
     }
 
     /**
      * 로그아웃 — Redis의 refresh token을 삭제해 서버 측에서 무효화한다.
+     *
+     * refreshToken 자체를 검증 수단으로 사용하므로
+     * 올바른 token을 모르는 공격자는 다른 사용자를 로그아웃시킬 수 없다.
+     *
+     * @param request { "refreshToken": "uuid-..." }
      */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
-        refreshTokenService.delete(request.userId());
+        refreshTokenService.delete(request.refreshToken());
         return ResponseEntity.noContent().build();
     }
 
@@ -114,9 +126,10 @@ public class AuthController {
     // ── 요청 DTO ─────────────────────────────────────────────────────────────
 
     public record RefreshRequest(
-            Long userId,
             @NotBlank String refreshToken
     ) {}
 
-    public record LogoutRequest(Long userId) {}
+    public record LogoutRequest(
+            @NotBlank String refreshToken
+    ) {}
 }

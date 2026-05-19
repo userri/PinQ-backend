@@ -14,7 +14,7 @@
 #   OPENAI_API_KEY=...          # 선택
 
 x-app-common: &app-common
-  image: ${DOCKERHUB_USERNAME}/pinq-backend:latest
+  image: ${DOCKERHUB_USERNAME}/pinq-backend:${APP_IMAGE_TAG:-latest}
   environment:
     SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
     DB_HOST: ${DB_HOST}

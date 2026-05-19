@@ -34,12 +34,12 @@ fi
 echo "▶ 현재 라이브: $LIVE  →  배포 대상: $NEXT  (태그: $IMAGE_TAG)"
 
 # ── 이미지 pull ────────────────────────────────────────────────────────────
-echo "▶ 이미지 pull 중..."
-docker compose pull app-${NEXT}
+echo "▶ 이미지 pull 중 (IMAGE_TAG=${IMAGE_TAG})..."
+APP_IMAGE_TAG="${IMAGE_TAG}" docker compose pull app-${NEXT}
 
 # ── 대기 슬롯 컨테이너 교체 ──────────────────────────────────────────────────
-echo "▶ pinq-app-${NEXT} 시작..."
-docker compose up -d --no-deps app-${NEXT}
+echo "▶ pinq-app-${NEXT} 시작 (IMAGE_TAG=${IMAGE_TAG})..."
+APP_IMAGE_TAG="${IMAGE_TAG}" docker compose up -d --no-deps app-${NEXT}
 
 # ── 헬스체크 (nginx 통하지 않고 컨테이너 직접 확인) ──────────────────────────
 echo "▶ 헬스체크 대기 중..."
