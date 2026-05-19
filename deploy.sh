@@ -50,6 +50,8 @@ for i in $(seq 1 $HEALTH_RETRIES); do
     break
   elif [[ "$STATUS" == "unhealthy" ]]; then
     echo "✗ pinq-app-${NEXT} unhealthy — 배포 중단"
+    echo "▶ 앱 로그 (마지막 80줄):"
+    docker logs --tail 80 pinq-app-${NEXT} 2>&1 || true
     docker compose stop app-${NEXT}
     exit 1
   fi
