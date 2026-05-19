@@ -12,6 +12,9 @@ import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.NavigableSet;
+import java.util.TreeSet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -129,6 +132,23 @@ public class UserService {
         return findOrCreateDemoUser();
     }
 
+    /** Phase 3 표준: user_quiz_attempt 기준으로 users streak 캐시를 동기화한다. */
+    @Transactional
+    public User synchronizeStreak(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("id=" + userId));
+        synchronizeStreakFromAttempts(user, LocalDate.now(clock));
+        return user;
+    }
+
+    /** Phase 2 하위 호환: demo 유저의 users streak 캐시를 동기화한다. */
+    @Transactional
+    public User synchronizeDemoStreak() {
+        User user = findOrCreateDemoUser();
+        synchronizeStreakFromAttempts(user, LocalDate.now(clock));
+        return user;
+    }
+
     /**
      * 회원가입 — 닉네임으로 새 유저를 생성한다.
      * 이미 같은 닉네임이 존재하면 DuplicateNicknameException(409).
@@ -192,6 +212,7 @@ public class UserService {
      */
     private void recordAnswerForUser(User user, Long quizId, Long selectedChoiceId, boolean isCorrect) {
         if (userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), quizId)) {
+            synchronizeStreakFromAttempts(user, LocalDate.now(clock));
             return;
         }
 
@@ -202,18 +223,82 @@ public class UserService {
                     UserQuizAttempt.create(user, quizId, selectedChoiceId, isCorrect)
             );
         } catch (DataIntegrityViolationException ignored) {
+            synchronizeStreakFromAttempts(user, today);
             return;
         }
-
-        user.recordSolvedOn(today);
-        userRepository.save(user);
 
         SolvedHistory history = solvedHistoryRepository
                 .findByUserIdAndSolvedDate(user.getId(), today)
                 .orElseGet(() -> SolvedHistory.create(user, today));
         history.record(isCorrect);
-        solvedHistoryRepository.save(history);
+        solvedHistoryRepository.saveAndFlush(history);
+
+        synchronizeStreakFromAttempts(user, today);
     }
+
+    private void synchronizeStreakFromAttempts(User user, LocalDate today) {
+        StreakSnapshot streak = calculateStreak(
+                userQuizAttemptRepository.findAttemptDatesByUserIdOrderByDateAsc(user.getId())
+                        .stream()
+                        .map(UserService::toLocalDate)
+                        .toList(),
+                today
+        );
+        user.syncStreak(
+                streak.currentStreak(),
+                Math.max(user.getMaxStreak(), streak.maxStreak()),
+                streak.lastSolvedDate()
+        );
+        userRepository.updateStreak(
+                user.getId(),
+                user.getCurrentStreak(),
+                user.getMaxStreak(),
+                user.getLastSolvedDate()
+        );
+    }
+
+    private StreakSnapshot calculateStreak(List<LocalDate> solvedDates, LocalDate today) {
+        NavigableSet<LocalDate> dates = new TreeSet<>();
+        for (LocalDate date : solvedDates) {
+            if (date != null && !date.isAfter(today)) {
+                dates.add(date);
+            }
+        }
+        if (dates.isEmpty()) {
+            return new StreakSnapshot(0, 0, null);
+        }
+
+        int maxStreak = 0;
+        int run = 0;
+        LocalDate previous = null;
+        for (LocalDate date : dates) {
+            run = previous != null && previous.plusDays(1).isEqual(date) ? run + 1 : 1;
+            maxStreak = Math.max(maxStreak, run);
+            previous = date;
+        }
+
+        LocalDate anchor = dates.contains(today)
+                ? today
+                : (dates.contains(today.minusDays(1)) ? today.minusDays(1) : null);
+        int currentStreak = 0;
+        while (anchor != null && dates.contains(anchor.minusDays(currentStreak))) {
+            currentStreak++;
+        }
+
+        return new StreakSnapshot(currentStreak, maxStreak, dates.last());
+    }
+
+    private static LocalDate toLocalDate(Object obj) {
+        if (obj instanceof LocalDate date) return date;
+        if (obj instanceof java.sql.Date date) return date.toLocalDate();
+        return LocalDate.parse(obj.toString());
+    }
+
+    private record StreakSnapshot(
+            int currentStreak,
+            int maxStreak,
+            LocalDate lastSolvedDate
+    ) {}
 
     private void deleteUser(User user) {
         userBookmarkRepository.deleteByUserId(user.getId());
