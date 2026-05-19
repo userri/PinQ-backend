@@ -20,14 +20,35 @@ HEALTH_RETRIES=36  # 36회 × 5초 = 180초 (start-period 60s + interval 10s × 
 HEALTH_INTERVAL=5  # 초
 
 # ── 현재 라이브 슬롯 판별 ────────────────────────────────────────────────────
-CURRENT=$(grep -o 'pinq-app-[a-z]*' nginx/upstream.conf 2>/dev/null | head -1 || echo "pinq-app-green")
+is_running() {
+  local slot="$1"
+  [[ "$(docker inspect --format='{{.State.Running}}' "pinq-app-${slot}" 2>/dev/null || echo false)" == "true" ]]
+}
 
-if [[ "$CURRENT" == "pinq-app-blue" ]]; then
+BLUE_RUNNING=false
+GREEN_RUNNING=false
+is_running blue && BLUE_RUNNING=true
+is_running green && GREEN_RUNNING=true
+
+if [[ "$BLUE_RUNNING" == "true" && "$GREEN_RUNNING" != "true" ]]; then
   LIVE="blue"
   NEXT="green"
-else
+elif [[ "$GREEN_RUNNING" == "true" && "$BLUE_RUNNING" != "true" ]]; then
   LIVE="green"
   NEXT="blue"
+else
+  CURRENT=$(grep -o 'pinq-app-[a-z]*' nginx/upstream.conf 2>/dev/null | head -1 || true)
+
+  if [[ "$CURRENT" == "pinq-app-blue" ]]; then
+    LIVE="blue"
+    NEXT="green"
+  elif [[ "$CURRENT" == "pinq-app-green" ]]; then
+    LIVE="green"
+    NEXT="blue"
+  else
+    LIVE="green"
+    NEXT="blue"
+  fi
 fi
 
 echo "▶ 현재 라이브: $LIVE  →  배포 대상: $NEXT  (태그: $IMAGE_TAG)"
@@ -40,9 +61,9 @@ docker network inspect resources_default >/dev/null 2>&1 \
 echo "▶ 이미지 pull 중 (IMAGE_TAG=${IMAGE_TAG})..."
 APP_IMAGE_TAG="${IMAGE_TAG}" docker compose pull app-${NEXT}
 
-# ── 의존 서비스(redis, nginx) 보장 ────────────────────────────────────────────
-echo "▶ redis, nginx 컨테이너 확인 및 시동..."
-docker compose up -d --no-deps redis nginx
+# ── 의존 서비스(redis) 보장 ──────────────────────────────────────────────────
+echo "▶ redis 컨테이너 확인 및 시동..."
+docker compose up -d --no-deps redis
 
 # ── 대기 슬롯 컨테이너 교체 ──────────────────────────────────────────────────
 echo "▶ pinq-app-${NEXT} 시작 (IMAGE_TAG=${IMAGE_TAG})..."
@@ -79,6 +100,7 @@ fi
 # ── nginx upstream 교체 ───────────────────────────────────────────────────
 echo "▶ nginx upstream → pinq-app-${NEXT} 전환 중..."
 cp nginx/upstream-${NEXT}.conf nginx/upstream.conf
+docker compose up -d --no-deps nginx
 docker exec pinq-nginx nginx -s reload
 echo "✓ nginx reload 완료 (무중단 전환)"
 
