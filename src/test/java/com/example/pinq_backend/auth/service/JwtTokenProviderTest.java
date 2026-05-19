@@ -20,8 +20,12 @@ class JwtTokenProviderTest {
     private static final String SECRET =
             "test-secret-key-must-be-at-least-32-bytes-long!!";
 
-    /** 고정 기준 시각 (임의의 epoch ms). */
-    private static final Instant BASE = Instant.parse("2026-05-01T00:00:00Z");
+    /**
+     * 고정 기준 시각.
+     * 파서에도 clock 을 주입하므로 만료 단계(BASE + 주열)가 실제 시스템 시각과 무관하다.
+     * 임의의 epoch 전에 속하도록 일부러 과거로 설정해 실제 Clock에 의존하지 않음을 검증한다.
+     */
+    private static final Instant BASE = Instant.parse("2020-01-01T00:00:00Z");
 
     @Test
     @DisplayName("생성 직후 토큰은 유효하다")

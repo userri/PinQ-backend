@@ -16,7 +16,6 @@
 set -euo pipefail
 
 IMAGE_TAG="${1:-latest}"
-HEALTH_URL="http://localhost/actuator/health"
 HEALTH_RETRIES=20
 HEALTH_INTERVAL=3  # 초
 
