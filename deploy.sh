@@ -21,6 +21,7 @@ HEALTH_INTERVAL=5  # 초
 
 REQUIRED_DEPLOY_FILES=(
   "docker-compose.yml"
+  "nginx/nginx.conf"
   "nginx/nginx.conf.template"
   "nginx/entrypoint.sh"
   "nginx/upstream-blue.conf"
@@ -116,7 +117,36 @@ fi
 # ── nginx upstream 교체 ───────────────────────────────────────────────────
 echo "▶ nginx upstream → pinq-app-${NEXT} 전환 중..."
 cp nginx/upstream-${NEXT}.conf nginx/upstream.conf
-docker compose up -d --no-deps nginx
+
+NGINX_STATE=$(docker inspect --format='{{.State.Running}} {{.State.Restarting}}' pinq-nginx 2>/dev/null || echo "false false")
+NGINX_RUNNING=$(awk '{print $1}' <<< "$NGINX_STATE")
+NGINX_RESTARTING=$(awk '{print $2}' <<< "$NGINX_STATE")
+
+if [[ "$NGINX_RUNNING" != "true" || "$NGINX_RESTARTING" == "true" ]]; then
+  echo "▶ nginx 컨테이너 복구/시동 중..."
+  docker compose up -d --no-deps nginx
+fi
+
+for i in $(seq 1 12); do
+  NGINX_STATE=$(docker inspect --format='{{.State.Running}} {{.State.Restarting}}' pinq-nginx 2>/dev/null || echo "false false")
+  NGINX_RUNNING=$(awk '{print $1}' <<< "$NGINX_STATE")
+  NGINX_RESTARTING=$(awk '{print $2}' <<< "$NGINX_STATE")
+
+  if [[ "$NGINX_RUNNING" == "true" && "$NGINX_RESTARTING" != "true" ]]; then
+    break
+  fi
+
+  echo "  nginx 대기 중... ($i/12) 상태: running=$NGINX_RUNNING restarting=$NGINX_RESTARTING"
+  sleep 1
+done
+
+if [[ "$NGINX_RUNNING" != "true" || "$NGINX_RESTARTING" == "true" ]]; then
+  echo "✗ nginx 컨테이너가 실행 가능 상태가 아닙니다." >&2
+  docker logs --tail 80 pinq-nginx 2>&1 || true
+  exit 1
+fi
+
+docker exec pinq-nginx nginx -t
 docker exec pinq-nginx nginx -s reload
 echo "✓ nginx reload 완료 (무중단 전환)"
 
