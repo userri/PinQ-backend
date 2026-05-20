@@ -22,7 +22,15 @@ fi
 : "${DUCKDNS_TOKEN:?DUCKDNS_TOKEN 이 .env 에 설정돼야 합니다}"
 
 # ip= 를 비워두면 DuckDNS 가 요청 출처 IP 를 자동 사용
-RESPONSE=$(curl -sS "https://www.duckdns.org/update?domains=${DUCKDNS_SUBDOMAIN}&token=${DUCKDNS_TOKEN}&ip=")
+RESPONSE=$(
+  curl -fsS -K - <<EOF
+url = "https://www.duckdns.org/update"
+get
+data-urlencode = "domains=${DUCKDNS_SUBDOMAIN}"
+data-urlencode = "token=${DUCKDNS_TOKEN}"
+data-urlencode = "ip="
+EOF
+)
 
 if [ "$RESPONSE" = "OK" ]; then
   echo "[$(date -Is)] DuckDNS update: OK"

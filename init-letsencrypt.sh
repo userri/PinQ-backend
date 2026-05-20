@@ -10,6 +10,7 @@
 # 사용법:
 #   ./init-letsencrypt.sh                # 운영 인증서 발급
 #   STAGING=1 ./init-letsencrypt.sh      # 테스트 (Let's Encrypt staging, 신뢰 X)
+#   FORCE_REISSUE=1 ./init-letsencrypt.sh # 기존 certbot 인증서가 있어도 재발급
 #
 # 동작:
 #   1. 권장 TLS 설정 파일 다운로드
@@ -21,6 +22,8 @@
 # ────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+cd "$(dirname "$0")"
+
 # .env 로드
 if [ -f .env ]; then
   set -a
@@ -30,21 +33,48 @@ if [ -f .env ]; then
 fi
 
 : "${DOMAIN:?DOMAIN 이 .env 에 설정돼야 합니다 (예: finq.duckdns.org)}"
-: "${CERT_EMAIL:?CERT_EMAIL 이 .env 에 설정돼야 합니다 (Let's Encrypt 만료 알림 수신용)}"
+: "${CERT_EMAIL:?CERT_EMAIL 이 .env 에 설정돼야 합니다 (인증서 만료 알림 수신용)}"
 
 STAGING="${STAGING:-0}"
+FORCE_REISSUE="${FORCE_REISSUE:-0}"
 DATA_PATH="./certbot"
 RSA_KEY_SIZE=4096
 
+if [ -e "$DATA_PATH/conf/renewal/$DOMAIN.conf" ] && [ "$FORCE_REISSUE" != "1" ]; then
+  echo "이미 $DOMAIN 인증서 갱신 설정이 있습니다."
+  echo "초기 발급을 건너뜁니다. 강제 재발급이 필요하면 FORCE_REISSUE=1 로 실행하세요."
+  exit 0
+fi
+
 mkdir -p "$DATA_PATH/conf" "$DATA_PATH/www"
 
-# ── 1) 권장 TLS 옵션/DH 파라미터 (옵션) ────────────────────────────────────
+download_if_missing() {
+  local url="$1"
+  local target="$2"
+  local tmp
+
+  if [ -e "$target" ]; then
+    return 0
+  fi
+
+  tmp="$(mktemp "${target}.XXXXXX")"
+  if curl -fsSL "$url" -o "$tmp"; then
+    mv "$tmp" "$target"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+# ── 1) 권장 TLS 옵션/DH 파라미터 ───────────────────────────────────────────
 if [ ! -e "$DATA_PATH/conf/options-ssl-nginx.conf" ] || [ ! -e "$DATA_PATH/conf/ssl-dhparams.pem" ]; then
   echo "▶ 권장 TLS 설정 다운로드..."
-  curl -sSL https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
-    > "$DATA_PATH/conf/options-ssl-nginx.conf"
-  curl -sSL https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem \
-    > "$DATA_PATH/conf/ssl-dhparams.pem"
+  download_if_missing \
+    "https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf" \
+    "$DATA_PATH/conf/options-ssl-nginx.conf"
+  download_if_missing \
+    "https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem" \
+    "$DATA_PATH/conf/ssl-dhparams.pem"
 fi
 
 # ── 2) 더미 인증서 생성 (nginx 가 일단 시동되도록) ─────────────────────────
@@ -87,8 +117,7 @@ docker compose run --rm --entrypoint "\
     -d $DOMAIN \
     --rsa-key-size $RSA_KEY_SIZE \
     --agree-tos \
-    --non-interactive \
-    --force-renewal" certbot
+    --non-interactive" certbot
 
 # ── 6) nginx reload ───────────────────────────────────────────────────────
 echo "▶ nginx reload..."
