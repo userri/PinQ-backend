@@ -29,7 +29,7 @@ http {
 
         # 그 외 모든 요청은 HTTPS 로 영구 리다이렉트
         location / {
-            return 301 https://$host$request_uri;
+            return 301 https://${DOMAIN}$request_uri;
         }
     }
 
@@ -41,15 +41,12 @@ http {
         ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
-        # Mozilla intermediate 권장 (2024+)
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_prefer_server_ciphers off;
-        ssl_session_timeout 1d;
-        ssl_session_cache shared:SSL:10m;
-        ssl_session_tickets off;
+        # Certbot/Mozilla 권장 TLS 옵션과 DH 파라미터를 init-letsencrypt.sh 에서 내려받아 사용한다.
+        include /etc/letsencrypt/options-ssl-nginx.conf;
+        ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-        # HSTS — 운영 안정화 전까지는 max-age 짧게 유지하다가 1년으로 늘릴 것.
-        # 일단 켜면 브라우저가 HTTP 접근을 거부하므로 롤백 어려움 주의.
+        # HSTS — 현재 1년(max-age=31536000)으로 설정.
+        # 길게 켠 뒤에는 브라우저가 HTTP 접근을 거부하므로 롤백 어려움 주의.
         add_header Strict-Transport-Security "max-age=31536000" always;
 
         location /health {

@@ -19,6 +19,22 @@ IMAGE_TAG="${1:-latest}"
 HEALTH_RETRIES=36  # 36회 × 5초 = 180초 (start-period 60s + interval 10s × retries 3 충분 커버)
 HEALTH_INTERVAL=5  # 초
 
+REQUIRED_DEPLOY_FILES=(
+  "docker-compose.yml"
+  "nginx/nginx.conf.template"
+  "nginx/entrypoint.sh"
+  "nginx/upstream-blue.conf"
+  "nginx/upstream-green.conf"
+)
+
+for file in "${REQUIRED_DEPLOY_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "✗ 배포 필수 파일이 없습니다: $file" >&2
+    echo "  EC2 배포 디렉터리에 nginx 템플릿/엔트리포인트 파일까지 함께 복사됐는지 확인하세요." >&2
+    exit 1
+  fi
+done
+
 # ── 현재 라이브 슬롯 판별 ────────────────────────────────────────────────────
 is_running() {
   local slot="$1"
