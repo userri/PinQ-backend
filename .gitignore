@@ -45,3 +45,7 @@ docker-compose.override.yml
 
 ### Runtime deployment state ###
 nginx/upstream.conf
+certbot/
+
+### Local HTTPS certificates ###
+certs/local/

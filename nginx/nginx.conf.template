@@ -1,0 +1,70 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    # ── 업스트림 (deploy.sh 가 blue/green 중 하나로 교체) ───────────────────
+    include /etc/nginx/conf.d/upstream.conf;
+
+    sendfile        on;
+    keepalive_timeout 65;
+    server_tokens off;
+
+    # ── HTTP (80): ACME challenge + HTTPS 리다이렉트 ───────────────────────
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        # Let's Encrypt webroot 인증용. 이 경로는 HTTPS 리다이렉트 대상에서 제외.
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        # 평문 헬스체크 (옵션 — ALB/외부 모니터링이 필요할 때만)
+        location = /health-http {
+            access_log off;
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        # 그 외 모든 요청은 HTTPS 로 영구 리다이렉트
+        location / {
+            return 301 https://${DOMAIN}$request_uri;
+        }
+    }
+
+    # ── HTTPS (443): 본 서비스 ─────────────────────────────────────────────
+    server {
+        listen 443 ssl http2;
+        server_name ${DOMAIN};
+
+        ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+        # Certbot/Mozilla 권장 TLS 옵션과 DH 파라미터를 init-letsencrypt.sh 에서 내려받아 사용한다.
+        include /etc/letsencrypt/options-ssl-nginx.conf;
+        ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+        # HSTS — 현재 1년(max-age=31536000)으로 설정.
+        # 길게 켠 뒤에는 브라우저가 HTTP 접근을 거부하므로 롤백 어려움 주의.
+        add_header Strict-Transport-Security "max-age=31536000" always;
+
+        location /health {
+            access_log off;
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            proxy_pass http://pinq_app;
+
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            proxy_connect_timeout 10s;
+            proxy_read_timeout    60s;
+        }
+    }
+}

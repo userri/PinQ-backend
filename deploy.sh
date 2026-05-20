@@ -19,6 +19,23 @@ IMAGE_TAG="${1:-latest}"
 HEALTH_RETRIES=36  # 36회 × 5초 = 180초 (start-period 60s + interval 10s × retries 3 충분 커버)
 HEALTH_INTERVAL=5  # 초
 
+REQUIRED_DEPLOY_FILES=(
+  "docker-compose.yml"
+  "nginx/nginx.conf"
+  "nginx/nginx.conf.template"
+  "nginx/entrypoint.sh"
+  "nginx/upstream-blue.conf"
+  "nginx/upstream-green.conf"
+)
+
+for file in "${REQUIRED_DEPLOY_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "✗ 배포 필수 파일이 없습니다: $file" >&2
+    echo "  EC2 배포 디렉터리에 nginx 템플릿/엔트리포인트 파일까지 함께 복사됐는지 확인하세요." >&2
+    exit 1
+  fi
+done
+
 # ── 현재 라이브 슬롯 판별 ────────────────────────────────────────────────────
 is_running() {
   local slot="$1"
@@ -100,7 +117,36 @@ fi
 # ── nginx upstream 교체 ───────────────────────────────────────────────────
 echo "▶ nginx upstream → pinq-app-${NEXT} 전환 중..."
 cp nginx/upstream-${NEXT}.conf nginx/upstream.conf
-docker compose up -d --no-deps nginx
+
+NGINX_STATE=$(docker inspect --format='{{.State.Running}} {{.State.Restarting}}' pinq-nginx 2>/dev/null || echo "false false")
+NGINX_RUNNING=$(awk '{print $1}' <<< "$NGINX_STATE")
+NGINX_RESTARTING=$(awk '{print $2}' <<< "$NGINX_STATE")
+
+if [[ "$NGINX_RUNNING" != "true" || "$NGINX_RESTARTING" == "true" ]]; then
+  echo "▶ nginx 컨테이너 복구/시동 중..."
+  docker compose up -d --no-deps nginx
+fi
+
+for i in $(seq 1 12); do
+  NGINX_STATE=$(docker inspect --format='{{.State.Running}} {{.State.Restarting}}' pinq-nginx 2>/dev/null || echo "false false")
+  NGINX_RUNNING=$(awk '{print $1}' <<< "$NGINX_STATE")
+  NGINX_RESTARTING=$(awk '{print $2}' <<< "$NGINX_STATE")
+
+  if [[ "$NGINX_RUNNING" == "true" && "$NGINX_RESTARTING" != "true" ]]; then
+    break
+  fi
+
+  echo "  nginx 대기 중... ($i/12) 상태: running=$NGINX_RUNNING restarting=$NGINX_RESTARTING"
+  sleep 1
+done
+
+if [[ "$NGINX_RUNNING" != "true" || "$NGINX_RESTARTING" == "true" ]]; then
+  echo "✗ nginx 컨테이너가 실행 가능 상태가 아닙니다." >&2
+  docker logs --tail 80 pinq-nginx 2>&1 || true
+  exit 1
+fi
+
+docker exec pinq-nginx nginx -t
 docker exec pinq-nginx nginx -s reload
 echo "✓ nginx reload 완료 (무중단 전환)"
 

@@ -12,6 +12,11 @@
 #   NAVER_CLIENT_ID=...         # 선택
 #   NAVER_CLIENT_SECRET=...     # 선택
 #   OPENAI_API_KEY=...          # 선택
+#   # ── HTTPS (nginx + Let's Encrypt) ────────────────────────────────────
+#   DOMAIN=finq.duckdns.org           # 실제 도메인
+#   CERT_EMAIL=you@example.com        # Let's Encrypt 만료 알림 수신
+#   DUCKDNS_SUBDOMAIN=finq            # DuckDNS 사용 시
+#   DUCKDNS_TOKEN=xxxx-xxxx-...       # DuckDNS 사용 시
 
 x-app-common: &app-common
   image: ${DOCKERHUB_USERNAME}/pinq-backend:${APP_IMAGE_TAG:-latest}
@@ -59,14 +64,37 @@ services:
     container_name: pinq-nginx
     ports:
       - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    # 배포 디렉터리에 아래 nginx 템플릿/엔트리포인트 파일이 함께 있어야 한다.
+    # deploy.sh 가 누락 여부를 사전에 검사한다.
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.legacy:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
+      - ./nginx/entrypoint.sh:/pinq/entrypoint.sh:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    # 직접 entrypoint 스크립트 실행: envsubst 로 도메인 치환 → 6h 주기 reload loop → nginx foreground
+    command: ["/bin/sh", "/pinq/entrypoint.sh"]
     restart: unless-stopped
     depends_on:
       - app-blue
     networks:
       - resources_default
+
+  # ── Let's Encrypt 인증서 자동 갱신 ─────────────────────────────────────
+  # 12시간마다 certbot renew 시도. 만료 30일 이내일 때만 실제 갱신이 일어남.
+  # 갱신된 인증서는 nginx 컨테이너가 6시간마다 reload 하며 자동 반영.
+  certbot:
+    image: certbot/certbot
+    container_name: pinq-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+    restart: unless-stopped
 
 networks:
   resources_default:
