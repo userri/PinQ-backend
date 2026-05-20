@@ -66,8 +66,11 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: ${DOMAIN:-}
+    # 배포 디렉터리에 아래 nginx 템플릿/엔트리포인트 파일이 함께 있어야 한다.
+    # deploy.sh 가 누락 여부를 사전에 검사한다.
     volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.legacy:ro
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx/upstream.conf:/etc/nginx/conf.d/upstream.conf:ro
       - ./nginx/entrypoint.sh:/pinq/entrypoint.sh:ro
