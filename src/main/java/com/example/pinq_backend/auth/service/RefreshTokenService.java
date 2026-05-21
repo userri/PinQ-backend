@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 /**
  * Refresh token을 Redis에 저장/조회/삭제한다.
  *
- * key 구조 (변경): refresh:{token}  →  value: userId(String)  →  TTL: 30일(기본)
+ * key 구조 (변경): refresh:{token}  →  value: userId(String)  →  TTL: 14일(기본)
  *
  * 이전 구조(refresh:{userId} → token)에서 token을 key로 역전시켰다.
  * 이렇게 하면:
@@ -28,7 +28,7 @@ public class RefreshTokenService {
 
     private final StringRedisTemplate redisTemplate;
 
-    @Value("${jwt.refresh-expiration-sec:2592000}")
+    @Value("${jwt.refresh-expiration-sec:1209600}")
     private long refreshExpirationSec;
 
     /**
