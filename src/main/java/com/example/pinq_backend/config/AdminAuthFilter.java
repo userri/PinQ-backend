@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -48,8 +50,15 @@ public class AdminAuthFilter extends OncePerRequestFilter {
 
         String provided = request.getHeader(ADMIN_SECRET_HEADER);
 
-        // secret 미설정이거나 헤더 불일치 시 차단
-        if (adminSecret.isBlank() || !adminSecret.equals(provided)) {
+        // secret 미설정이거나 헤더 불일치 시 차단.
+        // MessageDigest.isEqual — 첫 불일치 문자에서 조기 종료하지 않는 상수 시간 비교로
+        // 응답 시간 차이를 이용한 시크릿 추측(타이밍 공격)을 막는다.
+        boolean valid = !adminSecret.isBlank()
+                && provided != null
+                && MessageDigest.isEqual(
+                        adminSecret.getBytes(StandardCharsets.UTF_8),
+                        provided.getBytes(StandardCharsets.UTF_8));
+        if (!valid) {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.getWriter().write("{\"error\":\"Unauthorized\",\"status\":401}");
