@@ -72,6 +72,21 @@ public class QuizGenerationService {
     private final Clock clock;
 
     /**
+     * 오늘 퀴즈가 없을 때만 생성한다 — 자가치유 가드용. 있으면 아무것도 하지 않는다.
+     * 자정 정기 생성이 실패했거나(외부 API 장애) 그 시각에 서버가 내려가 있던 경우
+     * (배포/재시작 등)를 매시간 재시도로 복구한다.
+     */
+    @Transactional
+    public int ensureTodayQuizzes() {
+        LocalDate today = LocalDate.now(clock);
+        if (!quizRepository.findAllByQuizDate(today).isEmpty()) {
+            return 0;
+        }
+        log.info("오늘({}) 퀴즈가 없어 가드가 생성을 시작한다", today);
+        return generateTodayQuizzes();
+    }
+
+    /**
      * 오늘의 퀴즈 4개를 생성·저장한다.
      * 이미 오늘 퀴즈가 있으면 삭제 후 재생성한다 (수동 재실행 지원).
      */
