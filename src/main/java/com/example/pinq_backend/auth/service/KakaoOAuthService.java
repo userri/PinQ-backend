@@ -1,12 +1,14 @@
 package com.example.pinq_backend.auth.service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -25,7 +27,15 @@ public class KakaoOAuthService {
 
     private static final String KAKAO_USER_ME_URL = "https://kapi.kakao.com/v2/user/me";
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    public KakaoOAuthService() {
+        // 카카오 API 지연 시 로그인 스레드가 무한 대기하지 않도록 타임아웃을 명시한다.
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(3));
+        factory.setReadTimeout(Duration.ofSeconds(5));
+        this.restTemplate = new RestTemplate(factory);
+    }
 
     /**
      * Kakao accessToken 으로 사용자 정보를 조회한다.
