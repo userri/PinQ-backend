@@ -38,6 +38,8 @@ x-app-common: &app-common
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     # 구글 ID Token aud 검증용 — 미설정 시 구글 로그인이 거부된다
     GOOGLE_WEB_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID:-}
+    # 신규 서버 첫 기동 시에만 .env 에 DDL_AUTO=update 로 스키마 생성 후 제거 (기본 validate)
+    DDL_AUTO: ${DDL_AUTO:-validate}
     REDIS_HOST: pinq-redis
   restart: unless-stopped
   depends_on:
