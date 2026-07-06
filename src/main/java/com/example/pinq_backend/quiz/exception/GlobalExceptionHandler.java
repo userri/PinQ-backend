@@ -12,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 공통 예외 핸들러.
@@ -101,6 +102,20 @@ public class GlobalExceptionHandler {
             "status", 400,
             "error", "Bad Request",
             "messages", messages
+        ));
+    }
+
+    /**
+     * 존재하지 않는 경로/리소스 — catch-all 이 500 으로 삼키지 않고 404 를 유지한다.
+     * (Spring 6.1+ 는 매핑 없는 요청에 NoResourceFoundException 을 던진다)
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResource(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+            "timestamp", OffsetDateTime.now().toString(),
+            "status", 404,
+            "error", "Not Found",
+            "message", "요청한 리소스를 찾을 수 없습니다."
         ));
     }
 
