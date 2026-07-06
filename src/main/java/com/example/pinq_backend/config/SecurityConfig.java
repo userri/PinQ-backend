@@ -41,6 +41,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 로그인/토큰 재발급 — 인증 불필요
                         .requestMatchers("/api/auth/**").permitAll()
+                        // Play Console 제출용 공개 페이지 (개인정보처리방침, 계정 삭제 안내)
+                        .requestMatchers("/privacy.html", "/account-deletion.html").permitAll()
                         // 개발/문서 도구 — swagger 문서는 prod 프로파일에서
                         // springdoc.*.enabled=false 로 엔드포인트 자체가 꺼진다
                         .requestMatchers(
