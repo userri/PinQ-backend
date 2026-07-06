@@ -43,10 +43,17 @@ public class QuizService {
     public List<QuizResponse> getTodayQuizzes(Long userId) {
         LocalDate today = LocalDate.now(clock);
 
-        // 오늘 생성된 퀴즈가 있으면 반환, 없으면 Phase 2 시드 데이터(quizDate=null)만 폴백
-        List<Quiz> quizzes = quizRepository.countByQuizDate(today) > 0
-            ? quizRepository.findAllByQuizDateOrderByIdAsc(today)
-            : quizRepository.findAllByQuizDateIsNullOrderByIdAsc();
+        // 폴백 체인: 오늘 → 어제 → Phase 2 시드(quizDate=null).
+        // 오늘 퀴즈는 06시에 발행되므로, 발행 전(자정~06시)에는 어제 세트를 계속
+        // 서빙해 미완료 문제를 이어 풀 수 있게 한다. 06시 생성이 실패한 날에도
+        // 빈 화면 대신 어제 세트가 유지되다가, 가드 스케줄러가 복구하면 오늘 세트로 바뀐다.
+        List<Quiz> quizzes = quizRepository.findAllByQuizDateOrderByIdAsc(today);
+        if (quizzes.isEmpty()) {
+            quizzes = quizRepository.findAllByQuizDateOrderByIdAsc(today.minusDays(1));
+        }
+        if (quizzes.isEmpty()) {
+            quizzes = quizRepository.findAllByQuizDateIsNullOrderByIdAsc();
+        }
 
         if (quizzes.isEmpty()) return List.of();
 

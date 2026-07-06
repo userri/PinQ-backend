@@ -78,11 +78,28 @@ class QuizServiceTest {
     }
 
     @Test
+    @DisplayName("오늘 퀴즈가 발행 전이면(자정~06시) 어제 퀴즈로 폴백해 이어 풀 수 있다")
+    void getTodayQuizzes_fallsBackToYesterday_whenTodayNotPublished() {
+        Quiz y1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "어제 금리 문제");
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of());
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1)))
+            .willReturn(List.of(y1));
+        given(userQuizAttemptRepository.findByUserIdAndQuizIdIn(anyLong(), anyList()))
+            .willReturn(List.of());
+
+        List<QuizResponse> result = quizService.getTodayQuizzes(1L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).question()).isEqualTo("어제 금리 문제");
+    }
+
+    @Test
     @DisplayName("오늘의 퀴즈 목록을 반환한다 — category 는 article 에서 파생, 미풀이는 solved=false")
     void getTodayQuizzes_returnsListWithCategoryFromArticle() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
-        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of());
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1))).willReturn(List.of());
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
         // 아직 아무것도 안 푼 상태 → attempt 조회 결과 비어 있음
         given(userQuizAttemptRepository.findByUserIdAndQuizIdIn(anyLong(), anyList()))
@@ -107,7 +124,8 @@ class QuizServiceTest {
     void getTodayQuizzes_marksAttemptedQuizzesAsSolved() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
-        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of());
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1))).willReturn(List.of());
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
         // q1 은 첫 시도에 정답으로 풀었고, q2 는 아직 안 푼 상태
         UserQuizAttempt q1Attempt = mock(UserQuizAttempt.class);
@@ -132,7 +150,8 @@ class QuizServiceTest {
     void getTodayQuizzes_returnsAllEvenWhenAllAttempted() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
         Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
-        given(quizRepository.countByQuizDate(TODAY)).willReturn(0L);
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of());
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1))).willReturn(List.of());
         given(quizRepository.findAllByQuizDateIsNullOrderByIdAsc()).willReturn(List.of(q1, q2));
         // q1 은 정답으로 풀었고 q2 는 오답으로 풀었음
         UserQuizAttempt a1 = mock(UserQuizAttempt.class);
