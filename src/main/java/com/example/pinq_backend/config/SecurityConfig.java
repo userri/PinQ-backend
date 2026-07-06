@@ -4,7 +4,6 @@ import com.example.pinq_backend.auth.filter.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -12,17 +11,16 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Phase 3 보안 설정.
+ * 보안 설정.
  *
  *  - STATELESS: 세션 미사용, JWT 로만 인증.
- *  - /api/auth/**            : 로그인 — 인증 없이 접근 가능.
- *  - /api/users/register     : 회원가입 — 인증 없이 접근 가능.
- *  - /api/quizzes/**         : 퀴즈/채점 — JWT 없으면 demo 폴백 허용 (Phase 2 하위 호환).
- *  - /api/users/me/stats     : 통계 — demo 폴백 허용.
- *  - /api/users/me/**        : 닉네임 수정/탈퇴 — JWT 필수 (401).
- *  - /api/bookmarks/**       : 북마크 — JWT 필수 (401).
- *  - /api/me/**              : 풀이이력/오답노트 — JWT 필수 (401).
+ *  - /api/auth/**            : 로그인/토큰 재발급 — 인증 없이 접근 가능.
  *  - /api/admin/**           : AdminAuthFilter 가 X-Admin-Secret 헤더 검증.
+ *  - 그 외 /api/**           : JWT 필수 (401).
+ *
+ * Phase 2 시절의 demo 폴백(비인증 요청을 demo 유저로 처리)과 공개 회원가입은
+ * 카카오/구글 로그인 도입으로 더 이상 필요 없어 출시 전에 잠갔다.
+ * 열어두면 인터넷의 누구나 채점 기록을 오염시키고 무제한 회원 생성이 가능했다.
  */
 @Configuration
 public class SecurityConfig {
@@ -41,11 +39,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 로그인/회원가입 — 인증 불필요
+                        // 로그인/토큰 재발급 — 인증 불필요
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/users/register").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/users/me/stats").permitAll()
-                        // 개발/문서 도구
+                        // 개발/문서 도구 — swagger 문서는 prod 프로파일에서
+                        // springdoc.*.enabled=false 로 엔드포인트 자체가 꺼진다
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
@@ -53,12 +50,10 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/h2-console/**"
                         ).permitAll()
-                        // JWT 필수 경로 — 미인증 시 401
-                        .requestMatchers("/api/users/me/**").authenticated()
-                        .requestMatchers("/api/bookmarks/**").authenticated()
-                        .requestMatchers("/api/me/**").authenticated()
-                        // 나머지(퀴즈/통계 등) — JWT 없으면 demo 폴백 허용
-                        .anyRequest().permitAll()
+                        // 어드민 — 인증은 AdminAuthFilter 의 X-Admin-Secret 검증이 담당
+                        .requestMatchers("/api/admin/**").permitAll()
+                        // 나머지 API 전부 JWT 필수 — 미인증 시 401
+                        .anyRequest().authenticated()
                 )
                 .exceptionHandling(e -> e.authenticationEntryPoint(
                         (req, res, ex) -> res.sendError(

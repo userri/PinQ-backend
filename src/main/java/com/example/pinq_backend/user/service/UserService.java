@@ -188,16 +188,6 @@ public class UserService {
         deleteUser(user);
     }
 
-    /**
-     * 회원탈퇴 — 닉네임으로 유저를 찾아 삭제 (Phase 2 하위 호환).
-     */
-    @Transactional
-    public void withdraw(String nickname) {
-        User user = userRepository.findByNickname(nickname)
-                .orElseThrow(() -> new UserNotFoundException(nickname));
-        deleteUser(user);
-    }
-
     // ── private helpers ───────────────────────────────────────────────────────
 
     /**

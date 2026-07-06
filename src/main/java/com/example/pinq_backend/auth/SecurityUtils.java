@@ -25,7 +25,8 @@ public final class SecurityUtils {
         if (auth != null && auth.getPrincipal() instanceof Long userId) {
             return userId;
         }
-        // Phase 2 하위 호환: 인증 없이 접근 시 demo 유저로 처리
+        // SecurityConfig 가 모든 API 에 JWT 를 요구하므로 운영 요청은 여기 도달하지 않는다.
+        // @WebMvcTest 등 테스트 환경(principal 이 Long 이 아닌 경우)의 폴백으로만 쓰인다.
         return userService.findDemoUser().getId();
     }
 }
