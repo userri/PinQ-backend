@@ -7,12 +7,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 매일 자정 직후(00:05 KST)에 오늘의 퀴즈를 자동 생성하는 스케줄러.
+ * 매일 오전 6시(KST)에 오늘의 퀴즈를 자동 생성하는 스케줄러.
  *
- * 00:05 인 이유: 날짜가 바뀌면 곧바로 새 퀴즈를 풀 수 있어야 하기 때문.
- * (기존에는 06:00 생성이라 자정~6시 사이에 그날 퀴즈가 아예 존재하지 않아
- *  새벽 사용자가 퀴즈를 풀 수 없었다. 정각 대신 5분 버퍼를 둬
- *  자정 경계의 날짜 레이스를 피한다.)
+ * 06:00 발행은 의도된 제품 컨셉이다 — 새벽 미국장 마감·아침 뉴스까지 반영한
+ * "오늘 아침의 최신 경제 퀴즈"를 만들고, 앱 홈 화면 문구("매일 오전 6시 발송",
+ * "내일 오전 6시에 새 퀴즈가 도착해요")와 일치한다. 자정~6시에 퀴즈가 없는 것은
+ * 버그가 아니라 발행 전 상태다.
  *
  * Clock Bean이 Asia/Seoul로 고정되어 있고,
  * 스케줄러 cron의 zone도 동일하게 맞춰 타임존 불일치를 방지한다.
@@ -25,10 +25,10 @@ public class QuizGenerationScheduler {
     private final QuizGenerationService quizGenerationService;
 
     /**
-     * 매일 00:05 KST 자동 실행.
+     * 매일 오전 6시 KST 자동 실행.
      * 네이버 API → OpenAI API → DB 저장까지 수초~수십초 소요.
      */
-    @Scheduled(cron = "0 5 0 * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Seoul")
     public void generateDailyQuizzes() {
         log.info("[스케줄러] 일별 퀴즈 자동 생성 시작");
         try {
@@ -40,13 +40,15 @@ public class QuizGenerationScheduler {
     }
 
     /**
-     * 매시간 10분에 오늘 퀴즈 존재 여부를 확인하고, 없으면 생성한다.
+     * 발행 시각 이후(06:10~23:10) 매시간 10분에 오늘 퀴즈 존재 여부를 확인하고,
+     * 없으면 생성한다.
      *
-     * 정기 생성 시각(00:05)에 서버가 내려가 있었거나(배포/재시작),
-     * 외부 API 장애로 생성이 실패한 날을 자동 복구하는 가드.
-     * 오늘 퀴즈가 이미 있으면 아무 일도 하지 않는다.
+     * 정기 생성 시각(06:00)에 서버가 내려가 있었거나(배포/재시작),
+     * 네이버·OpenAI 장애로 생성이 실패한 날을 자동 복구하는 가드.
+     * 오늘 퀴즈가 이미 있으면 아무 일도 하지 않으며, 06시 이전에는 돌지 않아
+     * "아침 6시 발행" 컨셉을 침범하지 않는다.
      */
-    @Scheduled(cron = "0 10 * * * *", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 10 6-23 * * *", zone = "Asia/Seoul")
     public void ensureTodayQuizzes() {
         try {
             int count = quizGenerationService.ensureTodayQuizzes();
