@@ -92,6 +92,17 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    /** 잘못된 요청 값 (예: 30분 단위가 아닌 알림 시각, 형식 오류). */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            "timestamp", OffsetDateTime.now().toString(),
+            "status", 400,
+            "error", "Bad Request",
+            "message", e.getMessage()
+        ));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException e) {
         List<String> messages = e.getBindingResult().getFieldErrors().stream()

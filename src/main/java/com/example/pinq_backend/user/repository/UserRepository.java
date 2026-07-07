@@ -2,6 +2,8 @@ package com.example.pinq_backend.user.repository;
 
 import com.example.pinq_backend.user.domain.User;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -13,6 +15,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByNickname(String nickname);
 
     Optional<User> findByOauthProviderAndOauthId(String oauthProvider, String oauthId);
+
+    /** 알림이 켜져 있고 수신 시각이 주어진 30분 슬롯과 일치하는 사용자 (푸시 스케줄러용). */
+    List<User> findAllByNotificationEnabledTrueAndNotificationTime(LocalTime slotTime);
 
     /**
      * streak 관련 필드를 직접 UPDATE — JPA dirty checking 우회.

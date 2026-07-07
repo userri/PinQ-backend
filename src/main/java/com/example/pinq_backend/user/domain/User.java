@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -62,6 +63,17 @@ public class User extends BaseTimeEntity {
     @Column(name = "last_solved_date")
     private LocalDate lastSolvedDate;
 
+    /** 데일리 퀴즈 알림 수신 여부. 기본 false (사용자가 명시적으로 켜야 함). */
+    @Column(name = "notification_enabled", nullable = false)
+    private boolean notificationEnabled;
+
+    /**
+     * 알림 수신 희망 시각 (KST). 30분 단위(분은 0 또는 30)만 허용한다.
+     * 스케줄러가 30분 슬롯마다 이 값과 일치하는 사용자에게 전송한다.
+     */
+    @Column(name = "notification_time")
+    private LocalTime notificationTime;
+
     @Builder
     private User(
             String oauthProvider,
@@ -77,7 +89,12 @@ public class User extends BaseTimeEntity {
         this.currentStreak = currentStreak;
         this.maxStreak = maxStreak;
         this.lastSolvedDate = lastSolvedDate;
+        this.notificationEnabled = false;
+        this.notificationTime = DEFAULT_NOTIFICATION_TIME;
     }
+
+    /** 기본 알림 시각 09:00 (KST). */
+    public static final LocalTime DEFAULT_NOTIFICATION_TIME = LocalTime.of(9, 0);
 
     /**
      * 오늘 퀴즈 완주 시 호출.
@@ -105,6 +122,25 @@ public class User extends BaseTimeEntity {
     /** 닉네임 수정. */
     public void updateNickname(String newNickname) {
         this.nickname = newNickname;
+    }
+
+    /**
+     * 알림 설정 변경.
+     *
+     * @param enabled 알림 수신 여부
+     * @param time    수신 희망 시각. null 이면 기존 시각 유지.
+     *                30분 단위(분이 0 또는 30)가 아니면 거부한다 — 스케줄러가
+     *                30분 슬롯으로만 스캔하므로 그 외 값은 영원히 발송되지 않는다.
+     */
+    public void updateNotificationSettings(boolean enabled, java.time.LocalTime time) {
+        if (time != null) {
+            if (time.getMinute() % 30 != 0 || time.getSecond() != 0 || time.getNano() != 0) {
+                throw new IllegalArgumentException(
+                        "알림 시각은 30분 단위(HH:00 또는 HH:30)여야 합니다: " + time);
+            }
+            this.notificationTime = time;
+        }
+        this.notificationEnabled = enabled;
     }
 
     /** 풀이 이력에서 재계산한 streak 값을 users 테이블 캐시 필드에 반영한다. */

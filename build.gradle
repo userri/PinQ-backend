@@ -46,6 +46,9 @@ dependencies {
 
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// Firebase Admin SDK (FCM 푸시 전송)
+	implementation 'com.google.firebase:firebase-admin:9.4.1'
 }
 
 tasks.named('test') {
