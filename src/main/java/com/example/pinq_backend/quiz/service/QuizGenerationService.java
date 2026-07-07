@@ -238,10 +238,12 @@ public class QuizGenerationService {
                         new Random(choiceShuffleSeed(dto))
                 );
 
-                // Quiz 저장
+                // Quiz 저장. category 는 기사(article.category)가 아니라 '출제 슬롯'의
+                // 카테고리를 저장한다 — 기사 재사용 시 라벨이 오염되는 문제를 원천 차단.
                 quizRepository.save(
                         Quiz.builder()
                                 .article(article)
+                                .category(category)
                                 .quizDate(today)
                                 .question(dto.getQuestion())
                                 .explanation(dto.getExplanation())
@@ -319,7 +321,7 @@ public class QuizGenerationService {
         for (Quiz quiz : recentQuizzes) {
             lexicalPool.add(quiz.getQuestion());
             if (!quiz.getQuizDate().isBefore(promptFrom)) {
-                byCategory.computeIfAbsent(quiz.getArticle().getCategory(), c -> new ArrayList<>())
+                byCategory.computeIfAbsent(quiz.getCategory(), c -> new ArrayList<>())
                         .add(quiz.getQuestion());
             }
         }

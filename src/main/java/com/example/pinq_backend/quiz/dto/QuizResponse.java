@@ -1,6 +1,5 @@
 package com.example.pinq_backend.quiz.dto;
 
-import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import java.util.List;
@@ -53,11 +52,10 @@ public record QuizResponse(
      * @param correct 첫 시도 정답 여부. solved=false면 null.
      */
     public static QuizResponse from(Quiz quiz, boolean solved, Boolean correct) {
-        NewsArticle article = quiz.getArticle();
         return new QuizResponse(
             quiz.getId(),
-            article.getCategory().name(),
-            article.getCategory().getDisplayName(),
+            quiz.getCategory().name(),
+            quiz.getCategory().getDisplayName(),
             quiz.getQuestion(),
             quiz.getChoices().stream()
                 .map(ChoiceResponse::from)

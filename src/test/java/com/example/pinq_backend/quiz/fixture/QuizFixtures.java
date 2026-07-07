@@ -34,6 +34,7 @@ public final class QuizFixtures {
         );
         Quiz quiz = Quiz.builder()
             .article(article)
+            .category(category)
             .quizDate(quizDate)
             .question(question)
             .keyword("테스트 키워드 — 핵심 단어 설명")
@@ -63,6 +64,7 @@ public final class QuizFixtures {
         );
         Quiz quiz = Quiz.builder()
             .article(article)
+            .category(category)
             .question(question)
             .keyword("테스트 키워드 — 핵심 단어 설명")
             .explanation("테스트 해설")

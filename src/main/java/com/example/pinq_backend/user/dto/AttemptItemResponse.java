@@ -73,8 +73,8 @@ public record AttemptItemResponse(
         NewsArticle article = quiz.getArticle();
         return new AttemptItemResponse(
             quiz.getId(),
-            article.getCategory().name(),
-            article.getCategory().getDisplayName(),
+            quiz.getCategory().name(),          // 퀴즈 카테고리 (신뢰 원천)
+            quiz.getCategory().getDisplayName(),
             quiz.getQuestion(),
             quiz.getChoices().stream().map(ChoiceSummary::from).toList(),
             attempt != null ? attempt.getFirstSelectedChoiceId() : null,

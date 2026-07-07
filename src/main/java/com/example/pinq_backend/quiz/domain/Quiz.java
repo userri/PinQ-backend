@@ -1,10 +1,13 @@
 package com.example.pinq_backend.quiz.domain;
 
+import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.common.BaseTimeEntity;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -55,6 +58,20 @@ public class Quiz extends BaseTimeEntity {
     @JoinColumn(name = "article_id", nullable = false)
     private NewsArticle article;
 
+    /**
+     * 이 퀴즈의 카테고리. 생성 시 '출제 슬롯'의 카테고리를 그대로 저장하는 신뢰 원천.
+     *
+     * article.category 를 파생값으로 쓰지 않는 이유: 저장 시 findByUrl 로 기존 기사를
+     * 재사용하면 기사의 '최초' 카테고리가 따라와 실제 출제 카테고리와 어긋날 수 있다.
+     * (예: 부동산 슬롯이 예전 금리 기사를 재사용 → article=INTEREST_RATE 인데 문항은 부동산)
+     *
+     * nullable: 이 컬럼 도입 전 저장된 레코드는 null 일 수 있어 {@link #getCategory()} 가
+     * article 로 폴백한다. 신규 생성분은 항상 채워진다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "category", length = 32)
+    private Category category;
+
     /** 이 퀴즈가 제공되는 날짜. null = Phase 2 시드 데이터 (날짜 무관). */
     @Column(name = "quiz_date")
     private LocalDate quizDate;
@@ -80,6 +97,7 @@ public class Quiz extends BaseTimeEntity {
     @Builder
     private Quiz(
         NewsArticle article,
+        Category category,
         LocalDate quizDate,
         String question,
         String explanation,
@@ -88,12 +106,22 @@ public class Quiz extends BaseTimeEntity {
     ) {
         validateChoices(choices);
         this.article = article;
+        this.category = category;
         this.quizDate = quizDate;
         this.question = question;
         this.explanation = explanation;
         this.keyword = keyword;
         choices.forEach(c -> c.assignQuiz(this));
         this.choices = new ArrayList<>(choices);
+    }
+
+    /**
+     * 이 퀴즈의 카테고리. 저장된 값이 있으면 그것을, 없으면(구 레코드) 기사에서 파생한다.
+     * Lombok @Getter 대신 폴백 로직을 위해 직접 정의한다.
+     */
+    public Category getCategory() {
+        if (category != null) return category;
+        return article != null ? article.getCategory() : null;
     }
 
     private static void validateChoices(List<Choice> choices) {
