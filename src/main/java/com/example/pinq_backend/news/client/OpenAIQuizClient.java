@@ -52,26 +52,35 @@ public class OpenAIQuizClient {
      * 뉴스 기사로부터 퀴즈를 생성한다.
      *
      * 다단계 검증 흐름:
-     *  1. OpenAI로 퀴즈 생성 (system prompt에 카테고리 일치 + 1차원 인과 금지 + 좋은 예시 포함)
+     *  1. OpenAI로 퀴즈 생성 (system prompt에 카테고리 일치 + 1차원 인과 금지 + 좋은 예시 포함,
+     *     user prompt에 최근 출제 이력 — 같은 개념 재출제 회피 유도)
      *  2. 룰베이스 검증 (자바, 무료) — 환율↑+수입↑ 같은 명백한 인과 위반 차단
-     *  3. Claude cross-model 검증 — 룰북에 없는 미묘한 오답·중복 정답 차단
+     *  3. Claude cross-model 검증 — 룰북에 없는 미묘한 오답·중복 정답·이력과의 의미적 중복 차단
      *
      * 룰베이스를 Claude 검증보다 먼저 두는 이유: 명백한 오답을 즉시 거르고
      * Claude API 호출 비용을 절감하기 위함.
      *
-     * @param title    뉴스 제목
-     * @param content  뉴스 본문 (스크래핑 성공 시 전문, 실패 시 description 스니펫)
-     * @param category 이 기사가 속한 카테고리. 퀴즈 주제가 이 카테고리와 일치해야 하며,
-     *                 기사가 카테고리와 무관하면 SKIP한다.
+     * @param title           뉴스 제목
+     * @param content         뉴스 본문 (스크래핑 성공 시 전문, 실패 시 description 스니펫)
+     * @param category        이 기사가 속한 카테고리. 퀴즈 주제가 이 카테고리와 일치해야 하며,
+     *                        기사가 카테고리와 무관하면 SKIP한다.
+     * @param recentQuestions 최근 출제된 문항 목록 (같은 카테고리 + 오늘 생성분).
+     *                        생성 프롬프트에는 "중복 금지" 목록으로, Claude 검증에는
+     *                        의미적 중복 판정 기준으로 주입된다. 비어 있으면 해당 섹션 생략.
      * @return 생성된 퀴즈 DTO. 오류 또는 어느 단계든 검증 실패 시 Optional.empty().
      */
-    public Optional<GeneratedQuizDto> generateQuiz(String title, String content, Category category) {
+    public Optional<GeneratedQuizDto> generateQuiz(
+            String title,
+            String content,
+            Category category,
+            List<String> recentQuestions
+    ) {
         Map<String, Object> requestBody = Map.of(
                 "model", props.model(),
                 "max_tokens", MAX_TOKENS,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt()),
-                        Map.of("role", "user", "content", userPrompt(title, content, category))
+                        Map.of("role", "user", "content", userPrompt(title, content, category, recentQuestions))
                 )
         );
 
@@ -95,8 +104,8 @@ public class OpenAIQuizClient {
                 return Optional.empty();
             }
 
-            // 2차: Claude cross-model 검증.
-            if (!verifyAnswer(quiz)) {
+            // 2차: Claude cross-model 검증 (정답 정합성 + 이력과의 의미적 중복).
+            if (!verifyAnswer(quiz, recentQuestions)) {
                 return Optional.empty();
             }
 
@@ -120,9 +129,13 @@ public class OpenAIQuizClient {
      * 검증을 통과하는 문제가 있으므로, 모든 보기를 제공하고
      * "의미상 옳은 보기가 정확히 하나" 임을 조건으로 요구한다.
      *
+     * 최근 출제 이력이 있으면 "의미적 중복" 판정도 함께 요구한다.
+     * 표현이 달라 렉시컬 검사(QuizSimilarityChecker)를 통과하는 개념 중복
+     * (예: "환율 상승→수출기업 이점"의 어휘만 다른 변주)을 여기서 잡는다.
+     *
      * @return true면 정답 신뢰 가능, false면 폐기
      */
-    private boolean verifyAnswer(GeneratedQuizDto quiz) {
+    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .map(GeneratedQuizDto.ChoiceDto::getContent)
@@ -142,9 +155,24 @@ public class OpenAIQuizClient {
         }
         String choicesText = choicesTextBuilder.toString();
 
+        // 이력이 있을 때만 의미적 중복 판정 기준을 추가한다.
+        String duplicationCriterion = "";
+        String recentQuestionsSection = "";
+        if (recentQuestions != null && !recentQuestions.isEmpty()) {
+            duplicationCriterion = """
+                    4. 아래 "최근 출제 문제 목록"의 어떤 문항과라도 표현만 다를 뿐
+                       사실상 같은 개념·같은 인과를 묻는 중복 문제면 valid는 false입니다.
+                    """;
+            recentQuestionsSection = """
+
+                    최근 출제 문제 목록:
+                    %s
+                    """.formatted(formatQuestionList(recentQuestions));
+        }
+
         String verifyPrompt = """
                 다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
-                이전 맥락 없이 오직 경제 지식만으로 판단하세요.
+                오직 경제 지식과 아래 제공된 정보만으로 판단하세요.
 
                 문제: %s
 
@@ -157,11 +185,12 @@ public class OpenAIQuizClient {
                 1. 전체 보기 중 경제학 교과서 기준으로 의미상 명확히 옳은 보기가 정확히 하나여야 합니다.
                 2. 그 유일하게 옳은 보기가 정답으로 표시된 보기와 같아야 합니다.
                 3. 두 개 이상 옳거나, 정답이 틀렸거나, 불확실하면 valid는 false입니다.
-
+                %s%s
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """.formatted(quiz.getQuestion(), choicesText, answerContent);
+                """.formatted(quiz.getQuestion(), choicesText, answerContent,
+                        duplicationCriterion, recentQuestionsSection);
 
         // Anthropic Claude로 cross-model 검증 위임.
         // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
@@ -299,7 +328,20 @@ public class OpenAIQuizClient {
             """;
     }
 
-    private String userPrompt(String title, String content, Category category) {
+    private String userPrompt(String title, String content, Category category, List<String> recentQuestions) {
+        // 최근 출제 이력이 있을 때만 중복 금지 섹션을 추가한다.
+        String recentSection = "";
+        if (recentQuestions != null && !recentQuestions.isEmpty()) {
+            recentSection = """
+
+                [최근 이미 출제된 문제 — 중복 출제 금지]
+                %s
+                ※ 표현이 다르더라도 위 목록과 사실상 같은 개념·같은 인과를 묻는 문제는 중복입니다.
+                ※ 이 기사에서 위 목록에 없는 '새로운' 개념을 찾아 출제하세요.
+                   기사에서 새로운 개념을 찾을 수 없으면 SKIP하세요.
+                """.formatted(formatQuestionList(recentQuestions));
+        }
+
         return """
             다음 뉴스 기사를 검토하고, SKIP 여부를 먼저 판단한 뒤 퀴즈를 출제하거나 SKIP을 반환하세요.
 
@@ -310,7 +352,7 @@ public class OpenAIQuizClient {
 
             뉴스 제목: %s
             뉴스 내용: %s
-
+            %s
             출제 시 주의사항:
             - 시스템 프롬프트의 "금지 출제 패턴"을 절대 따라하지 마세요
             - 시스템 프롬프트의 "좋은 문제 예시"처럼 메커니즘·정의·비교·응용 중 하나로 출제하세요
@@ -318,6 +360,13 @@ public class OpenAIQuizClient {
             - 오답 보기는 그럴듯하지만 명확히 틀린 내용이어야 합니다
             - 한국어로 작성하세요
             - 경제 변수를 사용할 때는 반드시 방향을 명시하세요 ("환율 상승" O, "환율 변동" X)
-            """.formatted(category.name(), category.getDisplayName(), title, content);
+            """.formatted(category.name(), category.getDisplayName(), title, content, recentSection);
+    }
+
+    /** 문항 목록을 프롬프트용 "- 문항" 줄 목록으로 변환. */
+    private String formatQuestionList(List<String> questions) {
+        return questions.stream()
+                .map(q -> "- " + q)
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 }

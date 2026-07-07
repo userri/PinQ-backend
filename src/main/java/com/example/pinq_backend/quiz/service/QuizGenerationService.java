@@ -6,6 +6,7 @@ import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
 import com.example.pinq_backend.news.client.OpenAIQuizClient;
+import com.example.pinq_backend.news.client.QuizSimilarityChecker;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.example.pinq_backend.news.dto.NaverNewsItem;
 import com.example.pinq_backend.quiz.domain.Choice;
@@ -17,6 +18,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -61,6 +63,20 @@ public class QuizGenerationService {
     /** 카테고리당 키워드별 후보 뉴스 개수 */
     private static final int NEWS_FETCH_COUNT = 10;
 
+    /**
+     * 생성·검증 프롬프트에 "이미 출제된 문제"로 주입할 이력 기간 (일).
+     * 같은 카테고리의 최근 문항을 모델에게 보여줘 같은 개념의 재출제를 회피시킨다.
+     * 카테고리당 하루 1문항이므로 30일 ≈ 문항 30개 ≈ 프롬프트 +1천 토큰 수준 (비용 무시 가능).
+     */
+    private static final int PROMPT_HISTORY_DAYS = 30;
+
+    /**
+     * 저장 전 렉시컬 유사도 검사 대상 이력 기간 (일).
+     * 프롬프트 주입보다 길게 잡는 이유: 검사 비용이 0이라 기간을 늘려도 손해가 없고,
+     * 운영 데이터에서 한 달 이상 간격을 두고 같은 문제가 재출제된 사례가 확인됐기 때문.
+     */
+    private static final int DEDUP_HISTORY_DAYS = 60;
+
     private static final DateTimeFormatter PUB_DATE_FORMATTER =
             DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH);
 
@@ -70,6 +86,7 @@ public class QuizGenerationService {
     private final QuizRepository quizRepository;
     private final NewsArticleRepository newsArticleRepository;
     private final Clock clock;
+    private final QuizSimilarityChecker similarityChecker;
 
     /**
      * 오늘 퀴즈가 없을 때만 생성한다 — 자가치유 가드용. 있으면 아무것도 하지 않는다.
@@ -102,13 +119,17 @@ public class QuizGenerationService {
             log.info("기존 퀴즈 {} 개 삭제", existing.size());
         }
 
+        // 중복 방지 이력 로드. 오늘 퀴즈 삭제 '이후'에 조회해야
+        // 수동 재실행 시 방금 지운 오늘 퀴즈와 자기 자신이 충돌하지 않는다.
+        DedupHistory history = loadDedupHistory(today);
+
         // 카테고리 간 중복 기사 방지: 이번 생성 사이클에서 사용된 URL을 추적
         Set<String> usedUrls = new HashSet<>();
 
         int generatedCount = 0;
         for (Category category : Category.values()) {
             try {
-                boolean success = generateQuizForCategory(category, today, usedUrls);
+                boolean success = generateQuizForCategory(category, today, usedUrls, history);
                 if (success) generatedCount++;
             } catch (Exception e) {
                 log.error("카테고리 {} 퀴즈 생성 중 예외 발생", category, e);
@@ -124,16 +145,23 @@ public class QuizGenerationService {
      * 키워드 목록을 순서대로 시도하고, 한 키워드에서 모든 후보가 실패하면 다음 키워드로 넘어간다.
      *
      * @param usedUrls 이미 다른 카테고리에서 사용된 기사 URL 집합 (중복 기사 방지)
+     * @param history  최근 출제 이력 (프롬프트 주입용 + 저장 전 렉시컬 검사용)
      * @return 성공 여부
      */
     private boolean generateQuizForCategory(
             Category category,
             LocalDate today,
-            Set<String> usedUrls
+            Set<String> usedUrls,
+            DedupHistory history
     ) {
         List<String> keywords = CATEGORY_KEYWORDS.getOrDefault(
                 category, List.of(category.getDisplayName())
         );
+
+        // 이 카테고리의 최근 문항 + 오늘 이미 생성된 문항(타 카테고리 포함).
+        // 오늘 생성분을 넣는 이유: 같은 날 두 카테고리가 같은 개념을 내는 사례가
+        // 운영 데이터에서 확인됐기 때문 (예: 기준금리→주담대 금리 경로가 하루 2회).
+        List<String> promptHistory = history.promptQuestionsFor(category);
 
         for (String keyword : keywords) {
             List<NaverNewsItem> newsItems = naverNewsClient.search(keyword, NEWS_FETCH_COUNT);
@@ -164,7 +192,8 @@ public class QuizGenerationService {
 
                 if (content.isBlank()) continue;
 
-                Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(title, content, category);
+                Optional<GeneratedQuizDto> quizOpt =
+                        openAIQuizClient.generateQuiz(title, content, category, promptHistory);
                 if (quizOpt.isEmpty()) {
                     log.info("기사 건너뜀 (SKIP 또는 생성 실패). category={}, title={}", category, title);
                     continue;
@@ -173,6 +202,21 @@ public class QuizGenerationService {
                 GeneratedQuizDto dto = quizOpt.get();
                 if (!isValidQuiz(dto)) {
                     log.warn("OpenAI 응답 유효성 검증 실패. title={}", title);
+                    continue;
+                }
+
+                // 저장 전 최종 방어선: 최근 이력과의 렉시컬 유사도 검사.
+                // 프롬프트의 "중복 금지" 지시를 모델이 무시해도 여기서 걸러진다.
+                Optional<QuizSimilarityChecker.Match> similar =
+                        similarityChecker.findMostSimilar(dto.getQuestion(), history.lexicalPool());
+                if (similar.isPresent()) {
+                    QuizSimilarityChecker.Match match = similar.get();
+                    log.info("최근 출제 이력과 유사하여 폐기. category={}, jaccard={}, dice={}, "
+                                    + "candidate={}, existing={}",
+                            category,
+                            "%.2f".formatted(match.tokenJaccard()),
+                            "%.2f".formatted(match.bigramDice()),
+                            dto.getQuestion(), match.existingQuestion());
                     continue;
                 }
 
@@ -209,6 +253,10 @@ public class QuizGenerationService {
                 // 사용된 URL 등록 (다른 카테고리에서 재사용 방지)
                 usedUrls.add(url);
 
+                // 생성된 문항을 이력에 등록 — 이번 사이클의 다음 카테고리부터
+                // 프롬프트 주입·렉시컬 검사 양쪽에 반영된다.
+                history.register(dto.getQuestion());
+
                 log.info("퀴즈 생성 성공. category={}, keyword={}, title={}", category, keyword, title);
                 return true;
             }
@@ -218,6 +266,67 @@ public class QuizGenerationService {
 
         log.warn("모든 키워드에서 퀴즈 생성 실패. category={}", category);
         return false;
+    }
+
+    /**
+     * 이번 생성 사이클에서 쓰는 중복 방지 이력.
+     *
+     * @param promptQuestionsByCategory 카테고리별 최근 {@link #PROMPT_HISTORY_DAYS}일 문항.
+     *                                  생성·검증 프롬프트에 "중복 금지" 목록으로 주입된다.
+     * @param lexicalPool               최근 {@link #DEDUP_HISTORY_DAYS}일 전체 카테고리 문항.
+     *                                  저장 전 렉시컬 유사도 검사 대상.
+     * @param generatedToday            이번 사이클에서 새로 생성된 문항.
+     *                                  프롬프트·렉시컬 검사 양쪽에 즉시 반영되어
+     *                                  같은 날 카테고리 간 개념 중복을 막는다.
+     */
+    private record DedupHistory(
+            Map<Category, List<String>> promptQuestionsByCategory,
+            List<String> lexicalPool,
+            List<String> generatedToday
+    ) {
+        /** 해당 카테고리의 프롬프트 주입용 문항 목록 (최근 이력 + 오늘 생성분). */
+        List<String> promptQuestionsFor(Category category) {
+            List<String> merged = new ArrayList<>(
+                    promptQuestionsByCategory.getOrDefault(category, List.of()));
+            merged.addAll(generatedToday);
+            return merged;
+        }
+
+        /** 새로 생성된 문항을 이력에 등록. */
+        void register(String question) {
+            lexicalPool.add(question);
+            generatedToday.add(question);
+        }
+    }
+
+    /**
+     * DB에서 최근 퀴즈를 읽어 중복 방지 이력을 구성한다.
+     * 렉시컬 검사용 풀(60일·전체 카테고리)과 프롬프트 주입용(30일·카테고리별)을 한 쿼리로 만든다.
+     *
+     * 알려진 한계: 카테고리 분류는 article.category 를 프록시로 쓰는데, 저장 시
+     * findByUrl 로 기존 기사를 재사용하면 기사의 '최초' 카테고리가 따라와 실제 출제
+     * 카테고리와 어긋날 수 있다 (그 문항은 잘못된 카테고리의 프롬프트 이력에 들어감).
+     * 렉시컬 풀은 카테고리 무관이라 영향이 없고, 근본 해결은 Quiz 에 category 컬럼을
+     * 추가하는 것이다 (별도 마이그레이션 예정).
+     */
+    private DedupHistory loadDedupHistory(LocalDate today) {
+        List<Quiz> recentQuizzes = quizRepository.findAllByQuizDateGreaterThanEqual(
+                today.minusDays(DEDUP_HISTORY_DAYS));
+        LocalDate promptFrom = today.minusDays(PROMPT_HISTORY_DAYS);
+
+        Map<Category, List<String>> byCategory = new EnumMap<>(Category.class);
+        List<String> lexicalPool = new ArrayList<>();
+        for (Quiz quiz : recentQuizzes) {
+            lexicalPool.add(quiz.getQuestion());
+            if (!quiz.getQuizDate().isBefore(promptFrom)) {
+                byCategory.computeIfAbsent(quiz.getArticle().getCategory(), c -> new ArrayList<>())
+                        .add(quiz.getQuestion());
+            }
+        }
+        log.info("중복 방지 이력 로드. 렉시컬 풀={}건, 프롬프트 주입 대상={}건",
+                lexicalPool.size(),
+                byCategory.values().stream().mapToInt(List::size).sum());
+        return new DedupHistory(byCategory, lexicalPool, new ArrayList<>());
     }
 
     /** OpenAI 응답이 퀴즈 도메인 규칙을 충족하는지 검증. */

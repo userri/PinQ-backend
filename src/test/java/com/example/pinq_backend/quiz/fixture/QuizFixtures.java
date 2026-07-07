@@ -5,6 +5,7 @@ import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import java.lang.reflect.Field;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -20,6 +21,27 @@ public final class QuizFixtures {
 
     public static Quiz sampleQuiz(Long quizId, Category category, String question) {
         return sampleQuiz(quizId, category, question, /* correctOrderNum */ 2);
+    }
+
+    /** quizDate 가 있는 퀴즈 (생성 이력 조회 테스트용). */
+    public static Quiz sampleQuiz(Long quizId, Category category, String question, LocalDate quizDate) {
+        NewsArticle article = sampleArticle(1000L + quizId, category);
+        List<Choice> choices = List.of(
+            buildChoice(1L, 1, "보기 1", false),
+            buildChoice(2L, 2, "보기 2", true),
+            buildChoice(3L, 3, "보기 3", false),
+            buildChoice(4L, 4, "보기 4", false)
+        );
+        Quiz quiz = Quiz.builder()
+            .article(article)
+            .quizDate(quizDate)
+            .question(question)
+            .keyword("테스트 키워드 — 핵심 단어 설명")
+            .explanation("테스트 해설")
+            .choices(choices)
+            .build();
+        setId(quiz, quizId);
+        return quiz;
     }
 
     /**

@@ -29,6 +29,14 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
     List<Quiz> findAllByQuizDate(LocalDate quizDate);
 
     /**
+     * 특정 날짜 이후의 퀴즈 조회 (생성 시 중복 방지 이력용).
+     * 카테고리별 분류를 위해 article 을 함께 fetch 한다.
+     * quizDate 가 null 인 시드 데이터는 비교 조건상 자동 제외된다.
+     */
+    @EntityGraph(attributePaths = {"article"})
+    List<Quiz> findAllByQuizDateGreaterThanEqual(LocalDate from);
+
+    /**
      * 여러 quiz 를 한 번에 가져오면서 choices, article 까지 함께 fetch 한다.
      * 오답노트/북마크 목록 응답 시 N+1 을 피하기 위해 사용.
      */
