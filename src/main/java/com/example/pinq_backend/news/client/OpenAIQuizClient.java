@@ -26,6 +26,27 @@ public class OpenAIQuizClient {
     private static final String OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
     private static final int MAX_TOKENS = 1024;
 
+    /**
+     * 핵심 경제 인과 룰북. 생성(systemPrompt)과 검증(verifyAnswer) 양쪽이 공유한다.
+     *
+     * 검증에도 넣는 이유: 운영 데이터 분석에서 환율 방향 오답 5건(예: "환율 하락→수출 증가")이
+     * Claude 검증을 통과했는데, 원인이 검증 프롬프트에 방향 기준이 없어 "경제 지식만으로"
+     * 판단하게 둔 탓이었다. 생성·검증이 같은 절대 기준을 보도록 단일 출처로 통일한다.
+     */
+    private static final String CAUSAL_RULEBOOK = """
+            [환율] — 원/달러, 단기·명목 효과
+            - 환율 상승(원화 약세) → 수출 증가, 수입 감소, 수입물가 상승, 외국인 환차손
+            - 환율 하락(원화 강세) → 위와 정반대
+
+            [금리]
+            - 기준금리 인상 → 대출 수요 감소, 예금 매력 상승, 기존 채권 가격 하락,
+              변동금리 이자 부담 증가, 소비·투자 위축
+            - 기준금리 인하 → 위와 정반대
+
+            [주식·부동산]
+            - 금리 인상 → 주가·부동산 가격 하방 압력 (할인율 상승, 대출 부담 증가)
+            - 환율 상승 → 수출주 호재, 내수·수입 의존 업종 악재""";
+
     private final RestClient restClient;
     private final OpenAIProperties props;
     private final ObjectMapper objectMapper;
@@ -160,7 +181,7 @@ public class OpenAIQuizClient {
         String recentQuestionsSection = "";
         if (recentQuestions != null && !recentQuestions.isEmpty()) {
             duplicationCriterion = """
-                    4. 아래 "최근 출제 문제 목록"의 어떤 문항과라도 표현만 다를 뿐
+                    7. 아래 "최근 출제 문제 목록"의 어떤 문항과라도 표현만 다를 뿐
                        사실상 같은 개념·같은 인과를 묻는 중복 문제면 valid는 false입니다.
                     """;
             recentQuestionsSection = """
@@ -172,7 +193,10 @@ public class OpenAIQuizClient {
 
         String verifyPrompt = """
                 다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
-                오직 경제 지식과 아래 제공된 정보만으로 판단하세요.
+                아래 "경제 인과 룰북"과 경제 지식, 그리고 제공된 정보만으로 판단하세요.
+
+                경제 인과 룰북 (방향 판정의 절대 기준):
+                %s
 
                 문제: %s
 
@@ -181,15 +205,26 @@ public class OpenAIQuizClient {
 
                 정답으로 표시된 보기: %s
 
+                해설: %s
+
+                핵심 용어(keyword): %s
+
                 검증 기준:
                 1. 전체 보기 중 경제학 교과서 기준으로 의미상 명확히 옳은 보기가 정확히 하나여야 합니다.
                 2. 그 유일하게 옳은 보기가 정답으로 표시된 보기와 같아야 합니다.
-                3. 두 개 이상 옳거나, 정답이 틀렸거나, 불확실하면 valid는 false입니다.
+                3. 정답의 인과 방향이 위 룰북과 일치해야 합니다. 룰북과 반대 방향이면 valid는 false입니다.
+                   (예: "환율 하락→수출 증가", "환율 상승→수출 가격 상승·경쟁력 하락"은 룰북 위반)
+                4. 해설이 정답을 올바르게 뒷받침해야 합니다. 해설이 정답과 모순되거나
+                   다른 보기를 설명하면 valid는 false입니다.
+                5. 핵심 용어(keyword)의 정의가 경제학적으로 정확해야 합니다.
+                   (예: "환율 상승: 통화 가치가 높아지는 것"은 원/달러 기준 오정의이므로 false)
+                6. 두 개 이상 옳거나, 정답이 틀렸거나, 불확실하면 valid는 false입니다.
                 %s%s
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """.formatted(quiz.getQuestion(), choicesText, answerContent,
+                """.formatted(CAUSAL_RULEBOOK, quiz.getQuestion(), choicesText, answerContent,
+                        nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
                         duplicationCriterion, recentQuestionsSection);
 
         // Anthropic Claude로 cross-model 검증 위임.
@@ -247,18 +282,7 @@ public class OpenAIQuizClient {
             ## 핵심 경제 인과 룰북 (정답 판정의 절대 기준)
             아래 인과 방향과 충돌하는 보기는 절대 정답이 될 수 없습니다.
 
-            [환율] — 원/달러, 단기·명목 효과
-            - 환율 상승(원화 약세) → 수출 증가, 수입 감소, 수입물가 상승, 외국인 환차손
-            - 환율 하락(원화 강세) → 위와 정반대
-
-            [금리]
-            - 기준금리 인상 → 대출 수요 감소, 예금 매력 상승, 기존 채권 가격 하락,
-              변동금리 이자 부담 증가, 소비·투자 위축
-            - 기준금리 인하 → 위와 정반대
-
-            [주식·부동산]
-            - 금리 인상 → 주가·부동산 가격 하방 압력 (할인율 상승, 대출 부담 증가)
-            - 환율 상승 → 수출주 호재, 내수·수입 의존 업종 악재
+            """ + CAUSAL_RULEBOOK + """
 
             ※ 위 룰북은 보기의 옳고 그름을 '판정'하는 기준일 뿐, 출제 소재 목록이 아닙니다.
                룰북의 인과 문장을 그대로 문제·정답으로 재진술하는 출제는 금지합니다.
@@ -426,6 +450,10 @@ public class OpenAIQuizClient {
             - 한국어로 작성하세요
             - 경제 변수를 사용할 때는 반드시 방향을 명시하세요 ("환율 상승" O, "환율 변동" X)
             """.formatted(category.name(), category.getDisplayName(), title, content, recentSection);
+    }
+
+    private String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     /** 문항 목록을 프롬프트용 "- 문항" 줄 목록으로 변환. */

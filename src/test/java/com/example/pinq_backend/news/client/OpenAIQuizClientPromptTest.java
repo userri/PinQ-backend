@@ -39,6 +39,7 @@ class OpenAIQuizClientPromptTest {
 
         assertThat(prompt)
                 .contains("## 핵심 경제 인과 룰북")
+                .contains("환율 상승(원화 약세) → 수출 증가")   // 공유 룰북 본문이 조립됨
                 .contains("예시 1 —")
                 .contains("예시 2 —")
                 .contains("## 나쁜 문제 예시")
