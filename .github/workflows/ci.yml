@@ -163,6 +163,11 @@ jobs:
               echo "SKIP: users.notification_enabled 이미 존재"
             fi
 
+            # 타임스탬프 +9h 오염 보정 — 쿼리 자체가 멱등(미래 값만 보정)이라 매 배포 실행
+            docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+              < scripts/migration/2026-07-08-fix-timestamp-shift.sql
+            echo "OK: 타임스탬프 오염 보정 실행 (오염 행 없으면 no-op)"
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -174,3 +179,11 @@ jobs:
             cd ~/pinq_backend
             chmod +x deploy.sh
             ./deploy.sh ${{ github.sha }}
+
+            # 배포 '후' 타임스탬프 보정 재실행 — 배포 전 보정과 새 컨테이너 기동 사이에
+            # 구버전 컨테이너가 쓴 오염 행(+9h)까지 마저 잡는다 (쿼리 멱등)
+            set -a; . ./.env; set +a
+            MYSQL_CONTAINER=$(docker ps --format '{{.Names}}' | grep -m1 -i mysql)
+            docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+              < scripts/migration/2026-07-08-fix-timestamp-shift.sql
+            echo "OK: 배포 후 타임스탬프 보정 완료"

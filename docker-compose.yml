@@ -21,6 +21,13 @@
 x-app-common: &app-common
   image: ${DOCKERHUB_USERNAME}/pinq-backend:${APP_IMAGE_TAG:-latest}
   environment:
+    # ── 타임존을 KST 로 고정 (컨테이너 + JVM 양쪽) ──────────────────────────
+    # JVM 이 UTC 로 뜨면: 감사 시각은 KST Clock 이 벽시계 23:00 을 만드는데,
+    # JDBC 커넥터(serverTimezone=Asia/Seoul)가 이를 "UTC 23:00"으로 해석해
+    # +9h 변환 → DB 에 익일 08:00 으로 저장되는 이중 변환 버그가 있었다.
+    # JVM 기본 TZ = 커넥션 TZ = KST 로 맞추면 변환이 항등이 되어 근본 차단된다.
+    TZ: Asia/Seoul
+    JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Seoul"
     SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
     DB_HOST: ${DB_HOST}
     DB_PORT: ${DB_PORT:-3306}
