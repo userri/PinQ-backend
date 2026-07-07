@@ -150,7 +150,8 @@ public class QuizRuleValidator {
     );
 
     /**
-     * 퀴즈의 문제와 정답이 룰북의 인과와 일치하는지 검사한다.
+     * 퀴즈의 문제와 정답이 룰북의 인과와 일치하는지, 보기 구성이
+     * 정답을 유출하지 않는지 검사한다.
      *
      * @return ok() 또는 fail(사유)
      */
@@ -176,9 +177,81 @@ public class QuizRuleValidator {
             }
         }
 
-        // 2) 언어 일관성 검사 — 한국어 필드에 3+ 영어 단어 연속 등장 시 폐기
+        // 2) 오답 품질 검사 — 메타 전략(길이·문체·무변화)으로 정답이 유출되는 퀴즈 차단
+        Result distractorResult = checkDistractorQuality(quiz);
+        if (!distractorResult.valid()) return distractorResult;
+
+        // 3) 언어 일관성 검사 — 한국어 필드에 3+ 영어 단어 연속 등장 시 폐기
         Result langResult = checkKoreanOnly(quiz);
         if (!langResult.valid()) return langResult;
+
+        return Result.ok();
+    }
+
+    // ── 오답 품질 룰 (정답 유출 패턴 차단) ────────────────────────────────
+    //
+    // 운영 데이터(172문항) 분석 근거:
+    //  - 절대 표현·무변화 표현은 오답에만 등장 (정답 0건) → 존재 자체가 "이건 오답" 신호
+    //  - 최장 보기=정답 비율 68% (기대치 25%) → "가장 긴 보기 찍기"만으로 50.6% 정답
+    //  - 완곡 표현은 정답의 18.6% vs 오답의 5.2% → 문체만으로 정답 유추 가능
+    // 시스템 프롬프트의 '보기 작성 규칙'이 1차 방어이고, 여기는 위반 시 강제 폐기선.
+
+    /** 오답에서만 발견되어 온 절대 표현. "절대적"(수식어)은 정상 표현이라 제외. */
+    private static final Pattern ABSOLUTE_EXPRESSION =
+            Pattern.compile("항상|반드시|무조건|절대(?!적)|전혀");
+
+    /** '변화 없음' 류 표현 — 학습 가치가 없는 게으른 오답이자 오답 확정 신호. */
+    private static final Pattern NO_CHANGE_EXPRESSION = Pattern.compile(
+            "변화[가는]?\\s*없|변동[이은]?\\s*없|영향[이을은]?\\s*(?:없|미치지 않|주지 않)"
+                    + "|무관하|관계가 없|관련이 없|아무런 영향|동일하게 유지|일정하게 유지|그대로 유지");
+
+    /** 완곡(헤지) 표현 — 정답에만 있으면 문체 단서가 된다. "~할/늘어날/커질 수 있다" 활용형 포괄. */
+    private static final Pattern HEDGE_EXPRESSION = Pattern.compile("수 있|가능성|경향");
+
+    /** 정답이 최장 보기이면서 오답 평균 길이의 이 배수 이상이면 길이 편향으로 폐기. */
+    private static final double ANSWER_LENGTH_RATIO_LIMIT = 1.5;
+
+    private Result checkDistractorQuality(GeneratedQuizDto quiz) {
+        String answer = null;
+        List<String> distractors = new java.util.ArrayList<>();
+        for (GeneratedQuizDto.ChoiceDto choice : quiz.getChoices()) {
+            String content = choice.getContent() == null ? "" : choice.getContent();
+            if (choice.isAnswer()) {
+                answer = content;
+            } else {
+                distractors.add(content);
+            }
+        }
+        if (answer == null || distractors.isEmpty()) return Result.ok();
+
+        // 절대어·무변화 오답: 존재만으로 소거법이 가능해진다
+        for (String distractor : distractors) {
+            if (ABSOLUTE_EXPRESSION.matcher(distractor).find()) {
+                return Result.fail("오답에 절대 표현 (정답 유출 단서): " + distractor);
+            }
+            if (NO_CHANGE_EXPRESSION.matcher(distractor).find()) {
+                return Result.fail("무변화 류 오답 (정답 유출 단서): " + distractor);
+            }
+        }
+
+        // 길이 편향: 정답이 유일하게 가장 길면서 오답 평균의 1.5배 이상
+        int answerLength = answer.length();
+        double avgDistractorLength = distractors.stream()
+                .mapToInt(String::length).average().orElse(0);
+        boolean answerIsStrictlyLongest = distractors.stream()
+                .allMatch(d -> d.length() < answerLength);
+        if (answerIsStrictlyLongest && answerLength >= avgDistractorLength * ANSWER_LENGTH_RATIO_LIMIT) {
+            return Result.fail("정답 길이 편향: 정답 %d자가 오답 평균 %.1f자의 %.1f배"
+                    .formatted(answerLength, avgDistractorLength, answerLength / avgDistractorLength));
+        }
+
+        // 헤지 비대칭: 정답에만 완곡 표현이 있으면 문체로 정답이 드러난다
+        boolean answerHedged = HEDGE_EXPRESSION.matcher(answer).find();
+        boolean anyDistractorHedged = distractors.stream()
+                .anyMatch(d -> HEDGE_EXPRESSION.matcher(d).find());
+        if (answerHedged && !anyDistractorHedged) {
+            return Result.fail("정답에만 완곡 표현 (문체 단서): " + answer);
+        }
 
         return Result.ok();
     }
