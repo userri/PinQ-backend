@@ -102,14 +102,66 @@ jobs:
 
       # 최신 deploy.sh + docker-compose.yml + nginx 템플릿을 EC2 로 복사 (EC2 에 git 없음).
       # nginx/upstream.conf 는 현재 라이브 슬롯을 담는 런타임 상태 파일이라 덮어쓰지 않는다.
+      # scripts/migration/ 은 아래 "Prepare EC2" 단계의 멱등 마이그레이션에 사용된다.
       - name: Copy deploy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "docker-compose.yml,deploy.sh,nginx/entrypoint.sh,nginx/nginx.conf,nginx/nginx.conf.template,nginx/upstream-blue.conf,nginx/upstream-green.conf"
+          source: "docker-compose.yml,deploy.sh,nginx/entrypoint.sh,nginx/nginx.conf,nginx/nginx.conf.template,nginx/upstream-blue.conf,nginx/upstream-green.conf,scripts/migration"
           target: ~/pinq_backend/
+
+      # 배포 '전' 준비 — 순서 중요 (운영은 ddl-auto=validate 라 스키마가 먼저 있어야 새 앱이 뜬다):
+      #   1) FIREBASE_SERVICE_ACCOUNT_BASE64 시크릿을 .env 에 동기화 (시크릿 미설정 시 건너뜀)
+      #   2) 아직 적용 안 된 DB 마이그레이션 실행 (information_schema 로 멱등 가드)
+      - name: Prepare EC2 (env sync + DB migrations)
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          FIREBASE_SERVICE_ACCOUNT_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BASE64 }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: FIREBASE_SERVICE_ACCOUNT_BASE64
+          script: |
+            set -e
+            cd ~/pinq_backend
+
+            # ── 1) FCM 서비스 계정 시크릿 → .env (멱등: 있으면 갱신, 없으면 추가) ──
+            if [ -n "$FIREBASE_SERVICE_ACCOUNT_BASE64" ]; then
+              if grep -q '^FIREBASE_SERVICE_ACCOUNT_BASE64=' .env; then
+                sed -i "s|^FIREBASE_SERVICE_ACCOUNT_BASE64=.*|FIREBASE_SERVICE_ACCOUNT_BASE64=$FIREBASE_SERVICE_ACCOUNT_BASE64|" .env
+              else
+                printf 'FIREBASE_SERVICE_ACCOUNT_BASE64=%s\n' "$FIREBASE_SERVICE_ACCOUNT_BASE64" >> .env
+              fi
+              echo "OK: FIREBASE_SERVICE_ACCOUNT_BASE64 -> .env 동기화"
+            else
+              echo "SKIP: FIREBASE_SERVICE_ACCOUNT_BASE64 시크릿 미설정 — FCM 푸시 비활성 상태로 배포됩니다"
+            fi
+
+            # ── 2) 대기 중인 DB 마이그레이션 (컬럼 존재 여부로 멱등 가드) ──
+            set -a; . ./.env; set +a
+            MYSQL_CONTAINER=$(docker ps --format '{{.Names}}' | grep -m1 -i mysql)
+            echo "MySQL 컨테이너: $MYSQL_CONTAINER"
+            col_exists() {
+              docker exec "$MYSQL_CONTAINER" mysql -N -u"$DB_USERNAME" -p"$DB_PASSWORD" -e \
+                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$DB_NAME' AND TABLE_NAME='$1' AND COLUMN_NAME='$2'" 2>/dev/null
+            }
+            if [ "$(col_exists quiz category)" = "0" ]; then
+              docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+                < scripts/migration/2026-07-07-add-quiz-category.sql
+              echo "OK: quiz-category 마이그레이션 적용"
+            else
+              echo "SKIP: quiz.category 이미 존재"
+            fi
+            if [ "$(col_exists users notification_enabled)" = "0" ]; then
+              docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+                < scripts/migration/2026-07-07-add-notification.sql
+              echo "OK: notification 마이그레이션 적용"
+            else
+              echo "SKIP: users.notification_enabled 이미 존재"
+            fi
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
