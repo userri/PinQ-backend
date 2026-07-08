@@ -1,6 +1,7 @@
 package com.example.pinq_backend.user.service;
 
 import com.example.pinq_backend.user.domain.User;
+import com.example.pinq_backend.user.dto.GrassResponse;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.time.Clock;
@@ -107,6 +108,68 @@ public class UserStatsService {
             correctRate,
             activityGrid
         );
+    }
+
+    // ── 연간 잔디밭 ──────────────────────────────────────────────────────────
+
+    /** 잔디 기간: 오늘 포함 최근 365일. */
+    private static final int GRASS_DAYS = 365;
+
+    /** 하루 기본 퀴즈 세트 크기 — 완주(level 3+) 판정 기준. */
+    private static final int DAILY_SET_SIZE = 4;
+
+    /**
+     * 연간 잔디밭 (GitHub contribution graph 스타일).
+     * 활동이 있는 날만 sparse 로 반환한다. level 은 {@link GrassResponse} javadoc 참조.
+     */
+    @Transactional
+    public GrassResponse getGrass(Long userId) {
+        User user = userService.synchronizeStreak(userId);
+        LocalDate today = LocalDate.now(clock);
+        LocalDate from = today.minusDays(GRASS_DAYS - 1);
+
+        Map<LocalDate, Integer> attemptsByDate = userQuizAttemptRepository
+                .countAttemptsByDateBetween(userId, from, today).stream()
+                .collect(Collectors.toMap(
+                        row -> toLocalDate(row[0]),
+                        row -> ((Number) row[1]).intValue()
+                ));
+        Map<LocalDate, Integer> correctByDate = userQuizAttemptRepository
+                .countFirstCorrectByDateBetween(userId, from, today).stream()
+                .collect(Collectors.toMap(
+                        row -> toLocalDate(row[0]),
+                        row -> ((Number) row[1]).intValue()
+                ));
+
+        List<GrassResponse.GrassDay> days = attemptsByDate.entrySet().stream()
+                .map(e -> {
+                    LocalDate date = e.getKey();
+                    int solved = e.getValue();
+                    int correct = correctByDate.getOrDefault(date, 0);
+                    return new GrassResponse.GrassDay(date, solved, correct, grassLevel(solved, correct));
+                })
+                .sorted(java.util.Comparator.comparing(GrassResponse.GrassDay::date))
+                .toList();
+
+        int perfectDays = Math.toIntExact(days.stream().filter(d -> d.level() == 4).count());
+
+        return new GrassResponse(
+                from, today,
+                days.size(), perfectDays,
+                user.getCurrentStreak(), user.getMaxStreak(),
+                days
+        );
+    }
+
+    /**
+     * 잔디 농도 (1~4). 활동 없는 날은 응답에서 제외되므로 0 은 없다.
+     *  1 = 1~2문제, 2 = 3문제, 3 = 완주(4문제+), 4 = 완주 + 전부 정답 (만점 잔디)
+     */
+    private static int grassLevel(int solved, int correct) {
+        if (solved >= DAILY_SET_SIZE) {
+            return correct >= solved ? 4 : 3;
+        }
+        return solved >= 3 ? 2 : 1;
     }
 
     /**
