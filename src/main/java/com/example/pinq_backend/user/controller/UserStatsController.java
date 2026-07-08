@@ -1,6 +1,7 @@
 package com.example.pinq_backend.user.controller;
 
 import com.example.pinq_backend.auth.SecurityUtils;
+import com.example.pinq_backend.user.dto.ConceptStatsResponse;
 import com.example.pinq_backend.user.dto.GrassResponse;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.service.UserService;
@@ -37,5 +38,12 @@ public class UserStatsController {
     public GrassResponse getMyGrass() {
         Long userId = SecurityUtils.getCurrentUserId(userService);
         return userStatsService.getGrass(userId);
+    }
+
+    /** 취약 개념 진단 — 카테고리별 정답률 + 가장 약한 개념. */
+    @GetMapping("/me/concept-stats")
+    public ConceptStatsResponse getMyConceptStats() {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        return userStatsService.getConceptStats(userId);
     }
 }

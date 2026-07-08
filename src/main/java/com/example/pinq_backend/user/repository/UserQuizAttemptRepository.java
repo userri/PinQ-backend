@@ -83,6 +83,25 @@ public interface UserQuizAttemptRepository extends JpaRepository<UserQuizAttempt
      */
     List<UserQuizAttempt> findByUserIdAndQuizIdIn(Long userId, List<Long> quizIds);
 
+    /**
+     * 카테고리별 첫 시도 수·정답 수 집계 (취약 개념 진단용).
+     *
+     * quiz.category 는 라벨 오염 수정 이후의 신뢰 원천이지만 구 레코드는 NULL 이라
+     * article.category 로 폴백한다 (Quiz.getCategory() 와 동일한 규칙을 SQL 로 재현).
+     * 반환: [category(String), total(Number), correct(Number)] Object[] 리스트.
+     */
+    @Query(value = """
+        SELECT COALESCE(q.category, na.category) AS category,
+               COUNT(*) AS total,
+               SUM(CASE WHEN a.first_correct = true THEN 1 ELSE 0 END) AS correct
+        FROM user_quiz_attempt a
+        JOIN quiz q ON q.id = a.quiz_id
+        LEFT JOIN news_article na ON na.id = q.article_id
+        WHERE a.user_id = :userId
+        GROUP BY COALESCE(q.category, na.category)
+        """, nativeQuery = true)
+    List<Object[]> countByCategory(@Param("userId") Long userId);
+
     @Modifying
     @Query("DELETE FROM UserQuizAttempt a WHERE a.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);

@@ -1,6 +1,8 @@
 package com.example.pinq_backend.user.service;
 
+import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.user.domain.User;
+import com.example.pinq_backend.user.dto.ConceptStatsResponse;
 import com.example.pinq_backend.user.dto.GrassResponse;
 import com.example.pinq_backend.user.dto.UserStatsResponse;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
@@ -170,6 +172,46 @@ public class UserStatsService {
             return correct >= solved ? 4 : 3;
         }
         return solved >= 3 ? 2 : 1;
+    }
+
+    // ── 취약 개념 진단 ───────────────────────────────────────────────────────
+
+    /** 진단에 필요한 카테고리별 최소 표본 수 — 미만이면 weakest 후보에서 제외. */
+    private static final int MIN_ATTEMPTS_FOR_DIAGNOSIS = 3;
+
+    /**
+     * 카테고리(개념)별 정답률 + 가장 약한 개념.
+     * weakest: 표본 {@value MIN_ATTEMPTS_FOR_DIAGNOSIS}개 이상인 카테고리 중 정답률 최저.
+     * 동률이면 표본이 많은 쪽(더 신뢰할 수 있는 진단)을 고른다.
+     */
+    public ConceptStatsResponse getConceptStats(Long userId) {
+        List<ConceptStatsResponse.CategoryStat> stats = userQuizAttemptRepository
+                .countByCategory(userId).stream()
+                .filter(row -> row[0] != null) // 카테고리 유실 데이터 방어
+                .map(row -> {
+                    Category category = Category.valueOf((String) row[0]);
+                    int total = ((Number) row[1]).intValue();
+                    int correct = ((Number) row[2]).intValue();
+                    return new ConceptStatsResponse.CategoryStat(
+                            category.name(),
+                            category.getDisplayName(),
+                            total,
+                            correct,
+                            total > 0 ? (float) correct / total : 0f
+                    );
+                })
+                .sorted(java.util.Comparator.comparing(ConceptStatsResponse.CategoryStat::category))
+                .toList();
+
+        ConceptStatsResponse.CategoryStat weakest = stats.stream()
+                .filter(s -> s.total() >= MIN_ATTEMPTS_FOR_DIAGNOSIS)
+                .min(java.util.Comparator
+                        .comparingDouble(ConceptStatsResponse.CategoryStat::correctRate)
+                        .thenComparing(java.util.Comparator
+                                .comparingInt(ConceptStatsResponse.CategoryStat::total).reversed()))
+                .orElse(null);
+
+        return new ConceptStatsResponse(stats, weakest);
     }
 
     /**
