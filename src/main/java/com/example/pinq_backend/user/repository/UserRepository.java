@@ -31,4 +31,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
         @Param("maxStreak") int maxStreak,
         @Param("date") LocalDate date
     );
+
+    /**
+     * 복습 졸업 카운터를 1 증가시킨다 — "나무 한 그루".
+     *
+     * read-modify-write 대신 DB 원자적 증가로 처리해, 여러 기기에서
+     * 동시에 졸업 채점이 들어와도 카운트가 유실되지 않는다.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE User u SET u.graduatedReviewCount = u.graduatedReviewCount + 1 WHERE u.id = :userId")
+    void incrementGraduatedReviewCount(@Param("userId") Long userId);
 }

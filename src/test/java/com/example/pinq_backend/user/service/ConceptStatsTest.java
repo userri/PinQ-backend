@@ -3,6 +3,7 @@ package com.example.pinq_backend.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.example.pinq_backend.review.repository.ReviewDailyLogRepository;
 import com.example.pinq_backend.user.dto.ConceptStatsResponse;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.time.Clock;
@@ -28,13 +29,14 @@ class ConceptStatsTest {
 
     @Mock private UserService userService;
     @Mock private UserQuizAttemptRepository userQuizAttemptRepository;
+    @Mock private ReviewDailyLogRepository reviewDailyLogRepository;
 
     private UserStatsService service;
 
     @BeforeEach
     void setUp() {
         service = new UserStatsService(
-                userService, userQuizAttemptRepository,
+                userService, userQuizAttemptRepository, reviewDailyLogRepository,
                 Clock.system(ZoneId.of("Asia/Seoul")));
     }
 

@@ -74,6 +74,17 @@ public class User extends BaseTimeEntity {
     @Column(name = "notification_time")
     private LocalTime notificationTime;
 
+    /**
+     * 복습을 졸업한 문제 수 — "잔디밭에 키운 나무".
+     *
+     * 오답 → 3일 → 7일 → 14일 복습을 모두 통과하면 1 증가한다.
+     * 졸업 시 review_item 행은 삭제되므로 누적 성과는 이 카운터에만 남는다.
+     * 동시 요청 안전을 위해 dirty checking 이 아닌 UPDATE 쿼리로 증가시킨다
+     * ({@code UserRepository.incrementGraduatedReviewCount}).
+     */
+    @Column(name = "graduated_review_count", nullable = false)
+    private int graduatedReviewCount;
+
     @Builder
     private User(
             String oauthProvider,

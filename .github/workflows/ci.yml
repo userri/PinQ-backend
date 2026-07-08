@@ -173,6 +173,15 @@ jobs:
               < scripts/migration/2026-07-08-add-review-item.sql
             echo "OK: review_item 마이그레이션 실행"
 
+            # 복습 보상(졸업 카운터 + 일별 로그) — users 컬럼은 ADD COLUMN 이라 존재 가드 필요
+            if [ "$(col_exists users graduated_review_count)" = "0" ]; then
+              docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+                < scripts/migration/2026-07-08-add-review-rewards.sql
+              echo "OK: review-rewards 마이그레이션 적용"
+            else
+              echo "SKIP: users.graduated_review_count 이미 존재"
+            fi
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:

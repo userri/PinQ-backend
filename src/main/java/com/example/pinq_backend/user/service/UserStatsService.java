@@ -1,6 +1,8 @@
 package com.example.pinq_backend.user.service;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.review.domain.ReviewDailyLog;
+import com.example.pinq_backend.review.repository.ReviewDailyLogRepository;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.dto.ConceptStatsResponse;
 import com.example.pinq_backend.user.dto.GrassResponse;
@@ -11,6 +13,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ public class UserStatsService {
 
     private final UserService userService;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
+    private final ReviewDailyLogRepository reviewDailyLogRepository;
     private final Clock clock;
 
     /** Phase 3 표준: 인증된 userId 로 통계를 조회한다. */
@@ -122,7 +126,9 @@ public class UserStatsService {
 
     /**
      * 연간 잔디밭 (GitHub contribution graph 스타일).
-     * 활동이 있는 날만 sparse 로 반환한다. level 은 {@link GrassResponse} javadoc 참조.
+     *
+     * 활동이 있는 날만 sparse 로 반환한다 — 신규 학습을 한 날 ∪ 복습만 한 날.
+     * level 규칙과 스트릭·잔디의 축 구분은 {@link GrassResponse} javadoc 참조.
      */
     @Transactional
     public GrassResponse getGrass(Long userId) {
@@ -142,15 +148,25 @@ public class UserStatsService {
                         row -> toLocalDate(row[0]),
                         row -> ((Number) row[1]).intValue()
                 ));
+        Map<LocalDate, Integer> reviewedByDate = reviewDailyLogRepository
+                .findAllByUserIdAndReviewDateBetween(userId, from, today).stream()
+                .collect(Collectors.toMap(
+                        ReviewDailyLog::getReviewDate,
+                        ReviewDailyLog::getReviewedCount
+                ));
 
-        List<GrassResponse.GrassDay> days = attemptsByDate.entrySet().stream()
-                .map(e -> {
-                    LocalDate date = e.getKey();
-                    int solved = e.getValue();
+        // 신규 학습을 한 날과 복습만 한 날의 합집합이 '활동일'이다.
+        Set<LocalDate> activeDates = new java.util.TreeSet<>(attemptsByDate.keySet());
+        activeDates.addAll(reviewedByDate.keySet());
+
+        List<GrassResponse.GrassDay> days = activeDates.stream()
+                .map(date -> {
+                    int solved = attemptsByDate.getOrDefault(date, 0);
                     int correct = correctByDate.getOrDefault(date, 0);
-                    return new GrassResponse.GrassDay(date, solved, correct, grassLevel(solved, correct));
+                    int reviewed = reviewedByDate.getOrDefault(date, 0);
+                    return new GrassResponse.GrassDay(
+                            date, solved, correct, reviewed, grassLevel(solved, correct));
                 })
-                .sorted(java.util.Comparator.comparing(GrassResponse.GrassDay::date))
                 .toList();
 
         int perfectDays = Math.toIntExact(days.stream().filter(d -> d.level() == 4).count());
@@ -159,15 +175,23 @@ public class UserStatsService {
                 from, today,
                 days.size(), perfectDays,
                 user.getCurrentStreak(), user.getMaxStreak(),
+                user.getGraduatedReviewCount(),
                 days
         );
     }
 
     /**
      * 잔디 농도 (1~4). 활동 없는 날은 응답에서 제외되므로 0 은 없다.
-     *  1 = 1~2문제, 2 = 3문제, 3 = 완주(4문제+), 4 = 완주 + 전부 정답 (만점 잔디)
+     *  1 = 1~2문제, 또는 신규 학습 없이 복습만 한 날 (연한 잔디)
+     *  2 = 3문제, 3 = 완주(4문제+), 4 = 완주 + 전부 정답 (만점 잔디)
+     *
+     * 복습 수를 인자로 받지 않는 이유: 잔디 농도는 '신규 학습'의 지표이며,
+     * 복습을 아무리 많이 해도 level 1 을 넘지 않아야 한다 (solved=0 → 1).
      */
     private static int grassLevel(int solved, int correct) {
+        if (solved == 0) {
+            return 1; // 복습만 한 날 — 연한 잔디
+        }
         if (solved >= DAILY_SET_SIZE) {
             return correct >= solved ? 4 : 3;
         }

@@ -4,10 +4,12 @@ import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.domain.ReviewDailyLog;
 import com.example.pinq_backend.review.domain.ReviewItem;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
 import com.example.pinq_backend.review.dto.ReviewQuizResponse;
 import com.example.pinq_backend.review.dto.TodayReviewsResponse;
+import com.example.pinq_backend.review.repository.ReviewDailyLogRepository;
 import com.example.pinq_backend.review.repository.ReviewItemRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
@@ -40,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewService {
 
     private final ReviewItemRepository reviewItemRepository;
+    private final ReviewDailyLogRepository reviewDailyLogRepository;
     private final QuizRepository quizRepository;
     private final UserRepository userRepository;
     private final Clock clock;
@@ -138,12 +141,39 @@ public class ReviewService {
             graduated = item.advanceOrGraduate(today);
             if (graduated) {
                 reviewItemRepository.delete(item);
+                // 졸업 성과는 review_item 삭제 후에도 남아야 하므로 카운터에 적립한다.
+                // 원자적 UPDATE — 여러 기기에서 동시 졸업해도 카운트가 유실되지 않는다.
+                userRepository.incrementGraduatedReviewCount(userId);
             }
         } else {
             item.reset(today);
         }
 
+        recordDailyReview(userId, today, correct);
+
         return ReviewAnswerResponse.of(
                 quiz, correct, graduated, graduated ? null : item.getDueDate());
+    }
+
+    /**
+     * 그날의 복습 기록을 upsert 한다 — "물은 줬다"는 사실을 날짜 단위로 남긴다.
+     *
+     * 동시 요청으로 같은 날 로그를 둘이 동시에 생성하면 유니크 제약이 터지므로,
+     * 그때는 재조회해서 증가시키는 것으로 폴백한다.
+     */
+    private void recordDailyReview(Long userId, LocalDate today, boolean correct) {
+        var existing = reviewDailyLogRepository.findByUserIdAndReviewDate(userId, today);
+        if (existing.isPresent()) {
+            existing.get().record(correct);
+            return;
+        }
+        try {
+            reviewDailyLogRepository.save(ReviewDailyLog.firstReviewOfDay(
+                    userRepository.getReferenceById(userId), today, correct));
+        } catch (DataIntegrityViolationException e) {
+            // 동시 요청이 먼저 만들었다 — 그 행을 찾아 증가시킨다
+            reviewDailyLogRepository.findByUserIdAndReviewDate(userId, today)
+                    .ifPresent(log -> log.record(correct));
+        }
     }
 }

@@ -13,9 +13,11 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.domain.ReviewDailyLog;
 import com.example.pinq_backend.review.domain.ReviewItem;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
 import com.example.pinq_backend.review.dto.TodayReviewsResponse;
+import com.example.pinq_backend.review.repository.ReviewDailyLogRepository;
 import com.example.pinq_backend.review.repository.ReviewItemRepository;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.repository.UserRepository;
@@ -28,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -43,6 +46,7 @@ class ReviewServiceTest {
     private static final Long USER_ID = 10L;
 
     @Mock private ReviewItemRepository reviewItemRepository;
+    @Mock private ReviewDailyLogRepository reviewDailyLogRepository;
     @Mock private QuizRepository quizRepository;
     @Mock private UserRepository userRepository;
 
@@ -52,9 +56,12 @@ class ReviewServiceTest {
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(KST).toInstant(), KST);
-        service = new ReviewService(reviewItemRepository, quizRepository, userRepository, clock);
+        service = new ReviewService(
+                reviewItemRepository, reviewDailyLogRepository, quizRepository, userRepository, clock);
         when(userRepository.getReferenceById(USER_ID)).thenReturn(user);
         when(reviewItemRepository.save(any(ReviewItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(reviewDailyLogRepository.findByUserIdAndReviewDate(USER_ID, TODAY)).thenReturn(Optional.empty());
+        when(reviewDailyLogRepository.save(any(ReviewDailyLog.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ── enqueue ──────────────────────────────────────────────────────────────
@@ -146,6 +153,7 @@ class ReviewServiceTest {
         assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(7));
         assertThat(item.getStage()).isEqualTo(1);
         verify(reviewItemRepository, never()).delete(any());
+        verify(userRepository, never()).incrementGraduatedReviewCount(anyLong()); // 아직 나무 아님
     }
 
     @Test
@@ -163,6 +171,8 @@ class ReviewServiceTest {
         assertThat(response.graduated()).isTrue();
         assertThat(response.nextDueDate()).isNull();
         verify(reviewItemRepository).delete(item);
+        // 졸업 성과는 행 삭제 후에도 카운터에 남는다 — "나무 한 그루"
+        verify(userRepository).incrementGraduatedReviewCount(USER_ID);
     }
 
     @Test
@@ -180,6 +190,62 @@ class ReviewServiceTest {
         assertThat(response.graduated()).isFalse();
         assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(3));
         assertThat(item.getStage()).isZero();
+        verify(userRepository, never()).incrementGraduatedReviewCount(anyLong());
+    }
+
+    // ── 일별 복습 로그 (복습만 한 날 잔디용) ──────────────────────────────────
+
+    @Test
+    @DisplayName("그날 첫 복습이면 일별 로그를 새로 만든다")
+    void answer_firstReviewOfDay_createsDailyLog() {
+        stubDueItemWithQuiz(1L);
+
+        service.answerReview(USER_ID, 1L, 2L); // 정답
+
+        ArgumentCaptor<ReviewDailyLog> captor = ArgumentCaptor.forClass(ReviewDailyLog.class);
+        verify(reviewDailyLogRepository).save(captor.capture());
+        assertThat(captor.getValue().getReviewDate()).isEqualTo(TODAY);
+        assertThat(captor.getValue().getReviewedCount()).isEqualTo(1);
+        assertThat(captor.getValue().getCorrectCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 날 두 번째 복습이면 기존 로그를 증가시키고 새로 저장하지 않는다")
+    void answer_secondReviewOfDay_incrementsExistingLog() {
+        stubDueItemWithQuiz(1L);
+        ReviewDailyLog existing = ReviewDailyLog.firstReviewOfDay(user, TODAY, true);
+        when(reviewDailyLogRepository.findByUserIdAndReviewDate(USER_ID, TODAY))
+                .thenReturn(Optional.of(existing));
+
+        service.answerReview(USER_ID, 1L, 3L); // 오답
+
+        assertThat(existing.getReviewedCount()).isEqualTo(2);
+        assertThat(existing.getCorrectCount()).isEqualTo(1); // 오답이라 정답 수는 그대로
+        verify(reviewDailyLogRepository, never()).save(any(ReviewDailyLog.class));
+    }
+
+    @Test
+    @DisplayName("일별 로그 동시 생성으로 유니크 제약이 터지면 재조회 후 증가로 폴백한다")
+    void answer_dailyLogRace_fallsBackToIncrement() {
+        stubDueItemWithQuiz(1L);
+        ReviewDailyLog createdByOther = ReviewDailyLog.firstReviewOfDay(user, TODAY, false);
+        when(reviewDailyLogRepository.findByUserIdAndReviewDate(USER_ID, TODAY))
+                .thenReturn(Optional.empty())                  // 저장 시도 전: 없음
+                .thenReturn(Optional.of(createdByOther));      // 제약 위반 후 재조회: 있음
+        when(reviewDailyLogRepository.save(any(ReviewDailyLog.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_review_daily_log"));
+
+        service.answerReview(USER_ID, 1L, 2L); // 예외가 새어나오면 실패
+
+        assertThat(createdByOther.getReviewedCount()).isEqualTo(2);
+    }
+
+    /** due 상태의 복습 항목 + 해당 퀴즈를 스텁한다 (픽스처 정답 choiceId=2). */
+    private void stubDueItemWithQuiz(Long quizId) {
+        ReviewItem item = ReviewItem.enqueue(user, quizId, TODAY.minusDays(3));
+        when(reviewItemRepository.findByUserIdAndQuizId(USER_ID, quizId)).thenReturn(Optional.of(item));
+        when(quizRepository.findById(quizId))
+                .thenReturn(Optional.of(QuizFixtures.sampleQuiz(quizId, Category.STOCK, "복습 문제")));
     }
 
     @Test
