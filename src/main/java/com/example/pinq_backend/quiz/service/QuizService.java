@@ -6,6 +6,7 @@ import com.example.pinq_backend.quiz.dto.QuizResponse;
 import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.service.ReviewService;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
@@ -38,6 +39,7 @@ public class QuizService {
     private final QuizRepository quizRepository;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
     private final UserService userService;
+    private final ReviewService reviewService;
     private final Clock clock;
 
     public List<QuizResponse> getTodayQuizzes(Long userId) {
@@ -90,6 +92,12 @@ public class QuizService {
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
         userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
+
+        // 오답이면 간격 반복 복습 큐에 등록 ("잔디에 물 주기").
+        // 이미 등록된 문제면 no-op — 기존 복습 진행 상태를 보존한다.
+        if (!response.correct()) {
+            reviewService.enqueueWrongAnswer(userId, quizId);
+        }
         return response;
     }
 

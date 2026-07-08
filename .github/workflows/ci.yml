@@ -168,6 +168,11 @@ jobs:
               < scripts/migration/2026-07-08-fix-timestamp-shift.sql
             echo "OK: 타임스탬프 오염 보정 실행 (오염 행 없으면 no-op)"
 
+            # 오답 복습 테이블 + 기존 오답 백필 — CREATE IF NOT EXISTS / INSERT NOT EXISTS 로 멱등
+            docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+              < scripts/migration/2026-07-08-add-review-item.sql
+            echo "OK: review_item 마이그레이션 실행"
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:

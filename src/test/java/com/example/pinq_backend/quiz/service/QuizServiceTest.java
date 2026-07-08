@@ -23,6 +23,7 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.service.ReviewService;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
@@ -58,6 +59,9 @@ class QuizServiceTest {
 
     @Mock
     private UserService userService;
+
+    @Mock
+    private ReviewService reviewService;
 
     @Mock
     private Clock clock;
@@ -228,5 +232,27 @@ class QuizServiceTest {
                 .hasMessageContaining("1");
 
         verify(userService, never()).recordAnswer(anyLong(), any(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("오답이면 복습 큐에 등록된다 (잔디에 물 주기)")
+    void checkAnswer_wrong_enqueuesReview() {
+        Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제"); // 정답 choiceId=2
+        given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+        quizService.checkAnswer(10L, 1L, 3L); // 오답 선택
+
+        verify(reviewService).enqueueWrongAnswer(10L, 1L);
+    }
+
+    @Test
+    @DisplayName("정답이면 복습 큐에 등록되지 않는다")
+    void checkAnswer_correct_doesNotEnqueueReview() {
+        Quiz quiz = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
+        given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+        quizService.checkAnswer(10L, 1L, 2L); // 정답 선택
+
+        verify(reviewService, never()).enqueueWrongAnswer(anyLong(), anyLong());
     }
 }
