@@ -91,13 +91,20 @@ public class QuizService {
         }
 
         AnswerResponse response = AnswerResponse.of(quiz, selectedChoiceId);
-        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
 
         // 오답이면 간격 반복 복습 큐에 등록 ("잔디에 물 주기").
         // 이미 등록된 문제면 no-op — 기존 복습 진행 상태를 보존한다.
+        //
+        // ⚠️ 반드시 recordAnswer '이전'에 호출해야 한다: enqueue 는 REQUIRES_NEW
+        // 새 트랜잭션인데 review_item 의 users FK 가 users 행 S락을 요구한다.
+        // recordAnswer 가 먼저 실행되면 바깥 트랜잭션이 users 행 X락(스트릭 UPDATE)을
+        // 쥔 채 안쪽 트랜잭션을 기다리는 자기 교착이 되어 락 타임아웃까지 행이 걸린다
+        // (2026-07-10 실사고: 오답 제출이 전부 타임아웃).
         if (!response.correct()) {
             reviewService.enqueueWrongAnswer(userId, quizId);
         }
+
+        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
         return response;
     }
 

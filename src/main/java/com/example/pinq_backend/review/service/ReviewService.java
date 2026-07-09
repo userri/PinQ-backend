@@ -134,6 +134,16 @@ public class ReviewService {
         boolean correct = quiz.isCorrectAnswer(selectedChoiceId);
         LocalDate today = LocalDate.now(clock);
 
+        // "물은 줬다"는 사실을 날짜 단위로 기록 — 잔디밭의 복습만 한 날 표시용.
+        // REQUIRES_NEW 별도 빈에 위임: 로그 기록의 유니크 제약 경합이
+        // 채점 트랜잭션(스테이지 진급·졸업 카운터)을 오염시키지 않게 한다.
+        //
+        // ⚠️ 반드시 아래 졸업 카운터 UPDATE '이전'에 호출해야 한다:
+        // review_daily_log 의 users FK 가 users 행 S락을 요구하는데, 졸업 분기의
+        // incrementGraduatedReviewCount 가 먼저 X락을 쥐면 REQUIRES_NEW 안쪽
+        // 트랜잭션과 자기 교착이 된다 (QuizService.checkAnswer 의 동일 사고 참조).
+        reviewDailyLogRecorder.record(userId, today, correct);
+
         boolean graduated = false;
         if (correct) {
             graduated = item.advanceOrGraduate(today);
@@ -146,11 +156,6 @@ public class ReviewService {
         } else {
             item.reset(today);
         }
-
-        // "물은 줬다"는 사실을 날짜 단위로 기록 — 잔디밭의 복습만 한 날 표시용.
-        // REQUIRES_NEW 별도 빈에 위임: 로그 기록의 유니크 제약 경합이
-        // 채점 트랜잭션(스테이지 진급·졸업 카운터)을 오염시키지 않게 한다.
-        reviewDailyLogRecorder.record(userId, today, correct);
 
         return ReviewAnswerResponse.of(
                 quiz, correct, graduated, graduated ? null : item.getDueDate());
