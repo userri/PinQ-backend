@@ -39,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class AuthController {
 
     private final KakaoOAuthService kakaoOAuthService;
@@ -70,6 +71,9 @@ public class AuthController {
         try {
             googleUser = googleOAuthService.getUserInfo(request.idToken());
         } catch (GoogleOAuthException e) {
+            // 어떤 분기(설정 공백/빈 응답/구글 거부/aud 불일치)로 거부됐는지
+            // 서버 로그만으로 진단할 수 있도록 사유를 남긴다.
+            log.warn("구글 로그인 거부: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, e.getMessage(), e);
         }
 
