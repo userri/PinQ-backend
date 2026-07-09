@@ -154,6 +154,18 @@ echo "✓ nginx reload 완료 (무중단 전환)"
 echo "▶ pinq-app-${LIVE} 종료..."
 docker compose stop app-${LIVE}
 
+# ── 배포 태그를 .env 에 기록 ─────────────────────────────────────────────
+# APP_IMAGE_TAG 는 위에서 이 스크립트 실행 중에만 env 로 주입되므로, 기록해두지
+# 않으면 이후 수동 `docker compose up --force-recreate` (예: .env 변경 반영)가
+# 기본값(:latest / 옛 태그)으로 컨테이너를 되살려 조용한 롤백이 된다.
+# (2026-07-10 실사고: GOOGLE_WEB_CLIENT_ID 반영 재기동이 구버전 롤백을 유발)
+if grep -q '^APP_IMAGE_TAG=' .env 2>/dev/null; then
+  sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=${IMAGE_TAG}|" .env
+else
+  printf 'APP_IMAGE_TAG=%s\n' "${IMAGE_TAG}" >> .env
+fi
+echo "✓ .env APP_IMAGE_TAG=${IMAGE_TAG} 기록 (재기동 롤백 방지)"
+
 echo ""
 echo "✅ 배포 완료: $LIVE → $NEXT (태그: $IMAGE_TAG)"
 echo "   라이브: pinq-app-${NEXT}"
