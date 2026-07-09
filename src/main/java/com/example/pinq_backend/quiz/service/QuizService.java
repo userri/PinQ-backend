@@ -8,6 +8,7 @@ import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.service.ReviewService;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
+import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
 import java.time.Clock;
@@ -38,6 +39,7 @@ public class QuizService {
 
     private final QuizRepository quizRepository;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
+    private final UserBookmarkRepository userBookmarkRepository;
     private final UserService userService;
     private final ReviewService reviewService;
     private final Clock clock;
@@ -69,13 +71,17 @@ public class QuizService {
                 (a, b) -> a // (user, quiz) UK 보장으로 실제 중복은 없음. BookmarkService 와 일관성 유지.
             ));
 
+        // 북마크 여부 — 풀이 화면의 북마크 토글 초기 상태용 (quizIds 범위만 한 번에 조회)
+        java.util.Set<Long> bookmarkedIds =
+            userBookmarkRepository.findBookmarkedQuizIds(userId, quizIds);
+
         // 전체 퀴즈를 반환하되 attempt 가 있으면 solved=true, correct=firstCorrect 로 채움
         return quizzes.stream()
             .map(q -> {
                 UserQuizAttempt attempt = attemptByQuizId.get(q.getId());
                 boolean solved = attempt != null;
                 Boolean correct = solved ? attempt.isFirstCorrect() : null;
-                return QuizResponse.from(q, solved, correct);
+                return QuizResponse.from(q, solved, correct, bookmarkedIds.contains(q.getId()));
             })
             .toList();
     }

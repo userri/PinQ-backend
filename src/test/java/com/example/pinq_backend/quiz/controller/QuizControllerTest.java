@@ -80,7 +80,8 @@ class QuizControllerTest {
                     new ChoiceResponse(4L, 4, "보기4")
                 ),
                 false,
-                null
+                null,
+                false
             ),
             // 풀이 완료 (정답)
             new QuizResponse(
@@ -92,6 +93,7 @@ class QuizControllerTest {
                     new ChoiceResponse(8L, 4, "보기4")
                 ),
                 true,
+                true,
                 true
             )
         ));
@@ -99,6 +101,8 @@ class QuizControllerTest {
         mockMvc.perform(get("/api/quizzes/today"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[0].bookmarked").value(false))
+            .andExpect(jsonPath("$[1].bookmarked").value(true))
             .andExpect(jsonPath("$[0].id").value(1))
             .andExpect(jsonPath("$[0].category").value("INTEREST_RATE"))
             .andExpect(jsonPath("$[0].categoryDisplayName").value("금리"))

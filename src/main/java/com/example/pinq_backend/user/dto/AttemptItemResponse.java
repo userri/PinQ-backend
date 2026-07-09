@@ -64,27 +64,35 @@ public record AttemptItemResponse(
         }
     }
 
-    /** Quiz + Attempt + 북마크여부 → 응답 DTO. */
+    /**
+     * Quiz + Attempt + 북마크여부 → 응답 DTO.
+     *
+     * 미풀이(attempt == null) 항목은 정답·해설·keyword 를 마스킹한다:
+     * 풀이 화면에서 문제를 미리 북마크할 수 있게 되면서, 북마크 목록이
+     * 안 푼 문제의 정답을 노출하는 치팅 경로가 되는 것을 차단하기 위함.
+     * (selectedChoiceId/solvedAt 이 null 인 것으로 클라이언트가 미풀이를 판별)
+     */
     public static AttemptItemResponse of(
         Quiz quiz,
         UserQuizAttempt attempt,
         boolean bookmarked
     ) {
         NewsArticle article = quiz.getArticle();
+        boolean solved = attempt != null;
         return new AttemptItemResponse(
             quiz.getId(),
             quiz.getCategory().name(),          // 퀴즈 카테고리 (신뢰 원천)
             quiz.getCategory().getDisplayName(),
             quiz.getQuestion(),
             quiz.getChoices().stream().map(ChoiceSummary::from).toList(),
-            attempt != null ? attempt.getFirstSelectedChoiceId() : null,
-            quiz.getAnswerChoice().getId(),
-            attempt != null && attempt.isFirstCorrect(),
-            quiz.getExplanation(),
-            quiz.getKeyword(),
+            solved ? attempt.getFirstSelectedChoiceId() : null,
+            solved ? quiz.getAnswerChoice().getId() : null,
+            solved && attempt.isFirstCorrect(),
+            solved ? quiz.getExplanation() : null,
+            solved ? quiz.getKeyword() : null,
             ArticleSummary.from(article),
             bookmarked,
-            attempt != null ? attempt.getCreatedAt() : null
+            solved ? attempt.getCreatedAt() : null
         );
     }
 }

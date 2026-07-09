@@ -25,6 +25,7 @@ import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.service.ReviewService;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
+import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import com.example.pinq_backend.user.service.UserService;
 import java.time.Clock;
@@ -56,6 +57,9 @@ class QuizServiceTest {
 
     @Mock
     private UserQuizAttemptRepository userQuizAttemptRepository;
+
+    @Mock
+    private UserBookmarkRepository userBookmarkRepository;
 
     @Mock
     private UserService userService;

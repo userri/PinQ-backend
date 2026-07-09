@@ -27,7 +27,8 @@ public record QuizResponse(
     String question,
     List<ChoiceResponse> choices,
     boolean solved,
-    Boolean correct
+    Boolean correct,
+    boolean bookmarked
 ) {
 
     public record ChoiceResponse(Long id, int orderNum, String content) {
@@ -40,18 +41,19 @@ public record QuizResponse(
         }
     }
 
-    /** 풀이 정보 없이 — 미풀이로 간주 (호환용). */
+    /** 풀이 정보 없이 — 미풀이·미북마크로 간주 (호환용). */
     public static QuizResponse from(Quiz quiz) {
-        return from(quiz, false, null);
+        return from(quiz, false, null, false);
     }
 
     /**
      * 풀이 상태와 함께 변환.
      *
-     * @param solved  사용자가 이 퀴즈를 한 번이라도 풀었는지
-     * @param correct 첫 시도 정답 여부. solved=false면 null.
+     * @param solved     사용자가 이 퀴즈를 한 번이라도 풀었는지
+     * @param correct    첫 시도 정답 여부. solved=false면 null.
+     * @param bookmarked 북마크 여부 — 풀이 화면의 북마크 토글 초기 상태용
      */
-    public static QuizResponse from(Quiz quiz, boolean solved, Boolean correct) {
+    public static QuizResponse from(Quiz quiz, boolean solved, Boolean correct, boolean bookmarked) {
         return new QuizResponse(
             quiz.getId(),
             quiz.getCategory().name(),
@@ -61,7 +63,8 @@ public record QuizResponse(
                 .map(ChoiceResponse::from)
                 .toList(),
             solved,
-            correct
+            correct,
+            bookmarked
         );
     }
 }
