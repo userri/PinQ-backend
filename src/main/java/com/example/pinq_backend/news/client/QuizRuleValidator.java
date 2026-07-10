@@ -177,16 +177,33 @@ public class QuizRuleValidator {
             }
         }
 
-        // 2) 오답 품질 검사 — 메타 전략(길이·문체·무변화)으로 정답이 유출되는 퀴즈 차단
+        // 2) 문항 형식 검사 — 4지선다인데 서술형/명령형 지시문이면 폐기
+        if (COMMAND_FORM_ENDING.matcher(question.trim()).find()) {
+            return Result.fail("객관식인데 서술형·명령형 지시문 (예: '기술하시오'): " + question);
+        }
+
+        // 3) 오답 품질 검사 — 메타 전략(길이·문체·무변화)으로 정답이 유출되는 퀴즈 차단
         Result distractorResult = checkDistractorQuality(quiz);
         if (!distractorResult.valid()) return distractorResult;
 
-        // 3) 언어 일관성 검사 — 한국어 필드에 3+ 영어 단어 연속 등장 시 폐기
+        // 4) 언어 일관성 검사 — 한국어 필드에 3+ 영어 단어 연속 등장 시 폐기
         Result langResult = checkKoreanOnly(quiz);
         if (!langResult.valid()) return langResult;
 
         return Result.ok();
     }
+
+    /**
+     * 객관식 문항에 부적합한 서술형·명령형 지시문 어미.
+     *
+     * 운영 사고(2026-07-09 id 189 "…영향을 기술하시오."): 4지선다인데 문제가
+     * 서술을 요구하는 명령형으로 끝나면 문항 형식이 어긋난다. 의문문("…무엇인가?",
+     * "…어떻게 되는가?")으로 물어야 한다. 정상적인 의문형 어미('-는가', '-인가',
+     * '-까')는 매치하지 않고, 명시적 서술 지시 동사만 잡는다.
+     */
+    private static final Pattern COMMAND_FORM_ENDING = Pattern.compile(
+            "(설명|기술|서술|논|약술|비교)하(시오|라|여라)\\.?$"
+                    + "|(쓰|고르|구하|말하)(시오|라)\\.?$");
 
     // ── 오답 품질 룰 (정답 유출 패턴 차단) ────────────────────────────────
     //

@@ -124,6 +124,37 @@ class QuizRuleValidatorTest {
     }
 
     @Test
+    @DisplayName("객관식인데 서술형·명령형 지시문('기술하시오')이면 폐기한다")
+    void narrativeCommandForm_fails() throws Exception {
+        // 실제 사례: id 189 "…영향을 기술하시오."
+        GeneratedQuizDto quiz = quiz(
+                "환율 상승이 수출 기업의 영업이익에 미치는 영향을 기술하시오.",
+                "원화 환산 수익이 늘어난다",
+                List.of("수입 원자재 가격이 내린다",
+                        "외국인 투자가 자동으로 늘어난다",
+                        "해외 판매 가격이 반드시 오른다"));
+
+        QuizRuleValidator.Result result = validator.validate(quiz);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.reason()).contains("서술형");
+    }
+
+    @Test
+    @DisplayName("정상적인 의문형 어미('무엇인가?')는 통과한다")
+    void interrogativeForm_passes() throws Exception {
+        // 보기 길이를 비슷하게 맞춰 형식 검사만 통과 여부를 본다
+        GeneratedQuizDto quiz = quiz(
+                "콜금리와 기준금리의 가장 큰 차이는 무엇인가요?",
+                "콜금리는 시장에서 형성되는 실제 금리이다",
+                List.of("둘은 사실상 완전히 동일한 금리이다",
+                        "콜금리는 장기, 기준금리는 단기 금리이다",
+                        "기준금리는 은행 간 거래에만 쓰이는 금리이다"));
+
+        assertThat(validator.validate(quiz).valid()).isTrue();
+    }
+
+    @Test
     @DisplayName("기존 인과 룰도 계속 동작한다 (환율 상승 + 수입 증가 정답 차단)")
     void causalRule_stillWorks() throws Exception {
         GeneratedQuizDto quiz = quiz(
