@@ -96,16 +96,16 @@ public class OpenAIQuizClient {
             Category category,
             List<String> recentQuestions
     ) {
-        return generateQuiz(title, content, category, recentQuestions, null, null);
+        return generateQuiz(title, content, category, recentQuestions, null, null, null);
     }
 
     /**
-     * 실험 룰 주입 버전 — dry-run 워크벤치 전용.
+     * 실험 주입 버전 — dry-run 워크벤치 전용.
      *
      * extraGenRules/extraVerifyRules 는 배포 없이 프롬프트 룰 초안을 검증하기 위한
-     * 임시 주입 텍스트다. 시스템 프롬프트/검증 기준 '뒤에' 덧붙기만 하므로
-     * null 이면 프로덕션 경로와 완전히 동일하게 동작한다.
-     * 실험에서 효과가 확인된 룰만 코드에 확정 반영한다.
+     * 임시 주입 텍스트, modelOverride 는 생성 모델 A/B 비교용 임시 모델명이다.
+     * 셋 다 null 이면 프로덕션 경로와 완전히 동일하게 동작한다.
+     * 실험에서 효과가 확인된 것만 코드/설정에 확정 반영한다.
      */
     public Optional<GeneratedQuizDto> generateQuiz(
             String title,
@@ -113,7 +113,8 @@ public class OpenAIQuizClient {
             Category category,
             List<String> recentQuestions,
             String extraGenRules,
-            String extraVerifyRules
+            String extraVerifyRules,
+            String modelOverride
     ) {
         String systemContent = systemPrompt(category);
         if (extraGenRules != null && !extraGenRules.isBlank()) {
@@ -121,7 +122,7 @@ public class OpenAIQuizClient {
         }
 
         Map<String, Object> requestBody = Map.of(
-                "model", props.model(),
+                "model", (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : props.model(),
                 "max_tokens", MAX_TOKENS,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemContent),
@@ -270,6 +271,9 @@ public class OpenAIQuizClient {
                 11. 보기 중 문법이 깨졌거나 의미가 통하지 않는 비문이 있으면 valid는 false입니다.
                 12. 정답이 질문에 직접 답하지 않거나(질문은 이유를 묻는데 정답이 이유가 아님),
                     동어반복 수준으로 모호하면 valid는 false입니다.
+                13. 질문이 경제 주체의 일반적 반응·행동·대응을 예측하게 하면
+                    (예: "수출 기업의 반응은?") valid는 false입니다. 행동 예측은 유일 정답이
+                    성립하지 않습니다. 질문은 사실·인과·정의·비교·메커니즘 중 하나여야 합니다.
                 %s%s%s
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
@@ -350,6 +354,8 @@ public class OpenAIQuizClient {
             - 독자에게 생소할 수 있는 전문 고유명사·약어가 설명 없이 핵심으로 사용됨
             - 사건의 단순 수치(인원수, 날짜, 금액)를 묻는 내용
             - 사설·칼럼 등 필자의 주관적 분석이 주를 이루는 기사
+            - 특정 기관·기업의 인사·임명·조직 개편이 주된 내용인 기사
+              (예: "○○○, 연준 태스크포스 의장 임명" — 시사 고유명사 지식이지 경제 개념이 아님)
 
             ## 금지 출제 패턴 (이전 출제에서 과다 반복되어 학습 가치가 낮음)
             아래 패턴 또는 동치 표현은 절대 사용하지 마세요:
@@ -358,6 +364,9 @@ public class OpenAIQuizClient {
             - "주담대 증가 → 가계부채 증가" 류
             - "공포지수/변동성 지수 상승 → 투자자 매도/위험 회피" 류
             - "X가 상승/인상되면 Y는?" 형식의 단순 1차원 직선 인과
+            - 경제 주체(기업/투자자/가계/정부)가 "일반적으로 어떻게 반응·행동·대응하는가"를
+              묻는 행동 예측형 질문 (예: "수출 기업의 반응은?") — 행동은 상황·주체마다 달라
+              유일 정답이 성립하지 않음. 질문은 사실·인과·정의·비교·메커니즘 중 하나를 물을 것
             - "의견·전망이 엇갈리는/찬반이 갈리는 이유는?" 처럼 논쟁적 사안을 묻고
               한쪽 입장만 정답으로 두는 문제 — 반대 입장 보기도 참이므로 정답이 둘이 됨
               (예: "연준 전망이 엇갈리는 이유?" 정답 "인플레 우려로 인상 주장" —

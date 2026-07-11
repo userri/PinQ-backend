@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS trial_quiz (
     article_url        VARCHAR(1000) NULL,
     extra_gen_rules    TEXT         NULL,
     extra_verify_rules TEXT         NULL,
+    model              VARCHAR(64)  NULL,
     created_at         DATETIME(6)  NOT NULL,
     updated_at         DATETIME(6)  NOT NULL,
     PRIMARY KEY (id)

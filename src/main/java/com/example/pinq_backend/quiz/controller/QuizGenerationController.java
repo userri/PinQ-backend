@@ -43,8 +43,9 @@ public class QuizGenerationController {
     /**
      * @param extraGenRules    (선택) 생성 프롬프트에 임시 주입할 실험 규칙
      * @param extraVerifyRules (선택) Claude 검증에 임시 주입할 실험 기준
+     * @param model            (선택) 생성 모델 오버라이드 — 모델 A/B 비교용 (예: gpt-5-mini)
      */
-    public record TrialGenerateRequest(String extraGenRules, String extraVerifyRules) {}
+    public record TrialGenerateRequest(String extraGenRules, String extraVerifyRules, String model) {}
 
     @PostMapping("/test-generate")
     public ResponseEntity<TrialQuizResponse> testGenerate(
@@ -53,6 +54,7 @@ public class QuizGenerationController {
     ) {
         String gen = request != null ? request.extraGenRules() : null;
         String verify = request != null ? request.extraVerifyRules() : null;
-        return ResponseEntity.ok(quizGenerationService.trialGenerate(category, gen, verify));
+        String model = request != null ? request.model() : null;
+        return ResponseEntity.ok(quizGenerationService.trialGenerate(category, gen, verify, model));
     }
 }

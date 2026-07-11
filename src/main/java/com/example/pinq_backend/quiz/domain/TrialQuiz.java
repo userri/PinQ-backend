@@ -71,11 +71,15 @@ public class TrialQuiz extends BaseTimeEntity {
     @Column(name = "extra_verify_rules", length = 65535)
     private String extraVerifyRules;
 
+    /** 실험용 생성 모델 오버라이드 (없으면 null = 운영 기본 모델) */
+    @Column(name = "model", length = 64)
+    private String model;
+
     public static TrialQuiz record(
             String category, boolean success, int candidatesTried,
             String question, String choicesJson, String explanation, String keyword,
             String articleTitle, String articleUrl,
-            String extraGenRules, String extraVerifyRules
+            String extraGenRules, String extraVerifyRules, String model
     ) {
         TrialQuiz t = new TrialQuiz();
         t.category = category;
@@ -89,6 +93,7 @@ public class TrialQuiz extends BaseTimeEntity {
         t.articleUrl = articleUrl;
         t.extraGenRules = extraGenRules;
         t.extraVerifyRules = extraVerifyRules;
+        t.model = model;
         return t;
     }
 }

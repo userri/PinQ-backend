@@ -288,7 +288,7 @@ public class QuizGenerationService {
      */
     @Transactional
     public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(
-            Category category, String extraGenRules, String extraVerifyRules) {
+            Category category, String extraGenRules, String extraVerifyRules, String model) {
         LocalDate today = LocalDate.now(clock);
         DedupHistory history = loadDedupHistory(today);
         List<String> promptHistory = history.promptQuestionsFor(category);
@@ -308,7 +308,7 @@ public class QuizGenerationService {
 
                 tried++;
                 Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(
-                        title, content, category, promptHistory, extraGenRules, extraVerifyRules);
+                        title, content, category, promptHistory, extraGenRules, extraVerifyRules, model);
                 if (quizOpt.isEmpty()) continue;
 
                 GeneratedQuizDto dto = quizOpt.get();
@@ -323,19 +323,20 @@ public class QuizGenerationService {
                 }
 
                 String url = item.originallink() != null ? item.originallink() : item.link();
-                saveTrial(category, true, tried, dto, title, url, extraGenRules, extraVerifyRules);
+                saveTrial(category, true, tried, dto, title, url, extraGenRules, extraVerifyRules, model);
                 return com.example.pinq_backend.quiz.dto.TrialQuizResponse
                         .success(category.name(), tried, dto, title, url);
             }
         }
-        saveTrial(category, false, tried, null, null, null, extraGenRules, extraVerifyRules);
+        saveTrial(category, false, tried, null, null, null, extraGenRules, extraVerifyRules, model);
         return com.example.pinq_backend.quiz.dto.TrialQuizResponse.failure(category.name(), tried);
     }
 
     /** dry-run 결과를 실험 로그 테이블에 축적한다. 저장 실패가 dry-run 응답을 막지 않게 방어. */
     private void saveTrial(
             Category category, boolean success, int tried, GeneratedQuizDto dto,
-            String articleTitle, String articleUrl, String extraGenRules, String extraVerifyRules) {
+            String articleTitle, String articleUrl, String extraGenRules, String extraVerifyRules,
+            String model) {
         try {
             String choicesJson = dto == null ? null
                     : trialObjectMapper.writeValueAsString(dto.getChoices());
@@ -345,7 +346,7 @@ public class QuizGenerationService {
                     choicesJson,
                     dto == null ? null : dto.getExplanation(),
                     dto == null ? null : dto.getKeyword(),
-                    articleTitle, articleUrl, extraGenRules, extraVerifyRules));
+                    articleTitle, articleUrl, extraGenRules, extraVerifyRules, model));
         } catch (Exception e) {
             log.warn("[dry-run] 실험 로그 저장 실패 (응답에는 영향 없음)", e);
         }

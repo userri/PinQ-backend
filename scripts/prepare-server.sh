@@ -73,4 +73,12 @@ fi
 run_sql scripts/migration/2026-07-11-add-trial-quiz.sql
 echo "OK: trial_quiz 마이그레이션 실행"
 
+# trial_quiz.model (모델 A/B 비교) — ADD COLUMN 이라 존재 가드 필요
+if [ "$(col_exists trial_quiz model)" = "0" ]; then
+  run_sql scripts/migration/2026-07-11-add-trial-quiz-model.sql
+  echo "OK: trial_quiz.model 마이그레이션 적용"
+else
+  echo "SKIP: trial_quiz.model 이미 존재"
+fi
+
 echo "✅ 서버 준비 완료"

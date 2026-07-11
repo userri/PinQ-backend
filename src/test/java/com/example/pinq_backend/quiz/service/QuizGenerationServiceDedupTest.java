@@ -177,10 +177,10 @@ class QuizGenerationServiceDedupTest {
                 .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
         String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
-                anyList(), isNull(), isNull()))
+                anyList(), isNull(), isNull(), isNull()))
                 .thenReturn(Optional.of(quizDto(fresh)));
 
-        var result = service.trialGenerate(Category.INTEREST_RATE, null, null);
+        var result = service.trialGenerate(Category.INTEREST_RATE, null, null, null);
 
         assertThat(result.success()).isTrue();
         assertThat(result.quiz().question()).isEqualTo(fresh);
@@ -204,10 +204,10 @@ class QuizGenerationServiceDedupTest {
                 .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
         String duplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
-                anyList(), isNull(), isNull()))
+                anyList(), isNull(), isNull(), isNull()))
                 .thenReturn(Optional.of(quizDto(duplicate)));
 
-        var result = service.trialGenerate(Category.INTEREST_RATE, null, null);
+        var result = service.trialGenerate(Category.INTEREST_RATE, null, null, null);
 
         assertThat(result.success()).isFalse();
         assertThat(result.candidatesTried()).isEqualTo(1);
