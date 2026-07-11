@@ -288,7 +288,8 @@ public class QuizGenerationService {
      */
     @Transactional
     public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(
-            Category category, String extraGenRules, String extraVerifyRules, String model) {
+            Category category, String extraGenRules, String extraVerifyRules, String model,
+            String genPromptOverride) {
         LocalDate today = LocalDate.now(clock);
         DedupHistory history = loadDedupHistory(today);
         List<String> promptHistory = history.promptQuestionsFor(category);
@@ -308,7 +309,8 @@ public class QuizGenerationService {
 
                 tried++;
                 Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(
-                        title, content, category, promptHistory, extraGenRules, extraVerifyRules, model);
+                        title, content, category, promptHistory, extraGenRules, extraVerifyRules,
+                        model, genPromptOverride);
                 if (quizOpt.isEmpty()) continue;
 
                 GeneratedQuizDto dto = quizOpt.get();
@@ -323,13 +325,23 @@ public class QuizGenerationService {
                 }
 
                 String url = item.originallink() != null ? item.originallink() : item.link();
-                saveTrial(category, true, tried, dto, title, url, extraGenRules, extraVerifyRules, model);
+                saveTrial(category, true, tried, dto, title, url,
+                        genRulesForLog(extraGenRules, genPromptOverride), extraVerifyRules, model);
                 return com.example.pinq_backend.quiz.dto.TrialQuizResponse
                         .success(category.name(), tried, dto, title, url);
             }
         }
-        saveTrial(category, false, tried, null, null, null, extraGenRules, extraVerifyRules, model);
+        saveTrial(category, false, tried, null, null, null,
+                genRulesForLog(extraGenRules, genPromptOverride), extraVerifyRules, model);
         return com.example.pinq_backend.quiz.dto.TrialQuizResponse.failure(category.name(), tried);
+    }
+
+    /** 프롬프트 전면 교체 실험은 extra_gen_rules 컬럼에 마커와 함께 기록해 룰 주입 실험과 구분한다. */
+    private static String genRulesForLog(String extraGenRules, String genPromptOverride) {
+        if (genPromptOverride != null && !genPromptOverride.isBlank()) {
+            return "[PROMPT_OVERRIDE]\n" + genPromptOverride;
+        }
+        return extraGenRules;
     }
 
     /** dry-run 결과를 실험 로그 테이블에 축적한다. 저장 실패가 dry-run 응답을 막지 않게 방어. */

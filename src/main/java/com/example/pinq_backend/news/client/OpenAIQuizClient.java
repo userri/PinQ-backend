@@ -96,7 +96,7 @@ public class OpenAIQuizClient {
             Category category,
             List<String> recentQuestions
     ) {
-        return generateQuiz(title, content, category, recentQuestions, null, null, null);
+        return generateQuiz(title, content, category, recentQuestions, null, null, null, null);
     }
 
     /**
@@ -114,9 +114,14 @@ public class OpenAIQuizClient {
             List<String> recentQuestions,
             String extraGenRules,
             String extraVerifyRules,
-            String modelOverride
+            String modelOverride,
+            String genPromptOverride
     ) {
-        String systemContent = systemPrompt(category);
+        // genPromptOverride: 시스템 프롬프트 전면 교체 실험용 (프롬프트 간소화 A/B).
+        // 교체 프롬프트는 응답 JSON 형식 지시를 반드시 포함해야 한다 — 파싱이 깨지면 후보 전량 폐기됨.
+        String systemContent = (genPromptOverride != null && !genPromptOverride.isBlank())
+                ? genPromptOverride
+                : systemPrompt(category);
         if (extraGenRules != null && !extraGenRules.isBlank()) {
             systemContent += "\n\n## 실험 규칙 (아래 규칙도 반드시 준수)\n" + extraGenRules;
         }
