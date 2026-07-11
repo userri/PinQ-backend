@@ -101,8 +101,8 @@ services:
     # 직접 entrypoint 스크립트 실행: envsubst 로 도메인 치환 → 6h 주기 reload loop → nginx foreground
     command: ["/bin/sh", "/pinq/entrypoint.sh"]
     restart: unless-stopped
-    depends_on:
-      - app-blue
+    # depends_on 없음(의도적): nginx 는 컨테이너 이름으로 프록시하므로 앱 의존 선언이
+    # 불필요하고, 선언하면 nginx 재생성 시 대기 슬롯까지 깨워 1GB 램에 앱이 2개 뜬다.
     networks:
       - resources_default
 
