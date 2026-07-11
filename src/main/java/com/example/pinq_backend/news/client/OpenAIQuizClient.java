@@ -96,11 +96,35 @@ public class OpenAIQuizClient {
             Category category,
             List<String> recentQuestions
     ) {
+        return generateQuiz(title, content, category, recentQuestions, null, null);
+    }
+
+    /**
+     * 실험 룰 주입 버전 — dry-run 워크벤치 전용.
+     *
+     * extraGenRules/extraVerifyRules 는 배포 없이 프롬프트 룰 초안을 검증하기 위한
+     * 임시 주입 텍스트다. 시스템 프롬프트/검증 기준 '뒤에' 덧붙기만 하므로
+     * null 이면 프로덕션 경로와 완전히 동일하게 동작한다.
+     * 실험에서 효과가 확인된 룰만 코드에 확정 반영한다.
+     */
+    public Optional<GeneratedQuizDto> generateQuiz(
+            String title,
+            String content,
+            Category category,
+            List<String> recentQuestions,
+            String extraGenRules,
+            String extraVerifyRules
+    ) {
+        String systemContent = systemPrompt(category);
+        if (extraGenRules != null && !extraGenRules.isBlank()) {
+            systemContent += "\n\n## 실험 규칙 (아래 규칙도 반드시 준수)\n" + extraGenRules;
+        }
+
         Map<String, Object> requestBody = Map.of(
                 "model", props.model(),
                 "max_tokens", MAX_TOKENS,
                 "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt(category)),
+                        Map.of("role", "system", "content", systemContent),
                         Map.of("role", "user", "content", userPrompt(title, content, category, recentQuestions))
                 )
         );
@@ -126,7 +150,7 @@ public class OpenAIQuizClient {
             }
 
             // 2차: Claude cross-model 검증 (정답 정합성 + 이력과의 의미적 중복).
-            if (!verifyAnswer(quiz, recentQuestions)) {
+            if (!verifyAnswer(quiz, recentQuestions, extraVerifyRules)) {
                 return Optional.empty();
             }
 
@@ -156,7 +180,7 @@ public class OpenAIQuizClient {
      *
      * @return true면 정답 신뢰 가능, false면 폐기
      */
-    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions) {
+    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions, String extraVerifyRules) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .map(GeneratedQuizDto.ChoiceDto::getContent)
@@ -175,6 +199,12 @@ public class OpenAIQuizClient {
             }
         }
         String choicesText = choicesTextBuilder.toString();
+
+        // 실험용 임시 검증 기준 (dry-run 워크벤치 전용, null 이면 프로덕션과 동일)
+        String experimentalCriteria = "";
+        if (extraVerifyRules != null && !extraVerifyRules.isBlank()) {
+            experimentalCriteria = "\n추가 검증 기준 (아래도 반드시 적용):\n" + extraVerifyRules + "\n";
+        }
 
         // 이력이 있을 때만 의미적 중복 판정 기준을 추가한다.
         String duplicationCriterion = "";
@@ -233,13 +263,13 @@ public class OpenAIQuizClient {
                     "금리가 고정될 가능성이 커지면서 …"라고 서술 — 전제와 정답이 충돌)
                 9. 정답은 질문이 실제로 묻는 것에 대한 답이어야 합니다. 질문이 '주기가
                    반복되는 원인'을 묻는데 정답이 한 방향의 현상만 설명하면 false입니다.
-                %s%s
+                %s%s%s
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
                 """.formatted(CAUSAL_RULEBOOK, quiz.getQuestion(), choicesText, answerContent,
                         nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
-                        duplicationCriterion, recentQuestionsSection);
+                        duplicationCriterion, recentQuestionsSection, experimentalCriteria);
 
         // Anthropic Claude로 cross-model 검증 위임.
         // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.

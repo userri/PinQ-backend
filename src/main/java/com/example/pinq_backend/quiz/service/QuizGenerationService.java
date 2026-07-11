@@ -87,6 +87,8 @@ public class QuizGenerationService {
     private final NewsArticleRepository newsArticleRepository;
     private final Clock clock;
     private final QuizSimilarityChecker similarityChecker;
+    private final com.example.pinq_backend.quiz.repository.TrialQuizRepository trialQuizRepository;
+    private final com.fasterxml.jackson.databind.ObjectMapper trialObjectMapper;
 
     /**
      * 오늘 퀴즈가 없을 때만 생성한다 — 자가치유 가드용. 있으면 아무것도 하지 않는다.
@@ -272,16 +274,21 @@ public class QuizGenerationService {
 
     /**
      * 퀴즈 생성 dry-run — 실제 파이프라인 전체(뉴스 검색 → 생성 → 룰베이스 →
-     * Claude 검증 → 렉시컬 중복 검사)를 통과시키되 아무것도 저장하지 않는다.
+     * Claude 검증 → 렉시컬 중복 검사)를 통과시키되 실데이터에는 아무것도 남기지 않는다.
      *
      * 용도: 프롬프트·검증 로직 변경 후 다음 날 06시를 기다리지 않고 즉시 품질 확인.
      * 이력에 등록하지 않으므로(no register) 반복 호출해도 실제 생성에 영향 없다.
      *
+     * 룰 실험 워크벤치: extraGenRules/extraVerifyRules 로 룰 초안을 배포 없이 주입해
+     * 효과를 확인할 수 있다. 결과는 실데이터와 분리된 trial_quiz 테이블에 자동 축적되어
+     * 룰 버전 간 품질 비교(before/after)에 쓰인다.
+     *
      * 주의: 후보 리젝 사유는 응답에 없고 서버 로그로 확인한다
      * (OpenAIQuizClient/QuizRuleValidator 가 이미 사유를 로깅함).
      */
-    @Transactional(readOnly = true)
-    public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(Category category) {
+    @Transactional
+    public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(
+            Category category, String extraGenRules, String extraVerifyRules) {
         LocalDate today = LocalDate.now(clock);
         DedupHistory history = loadDedupHistory(today);
         List<String> promptHistory = history.promptQuestionsFor(category);
@@ -300,8 +307,8 @@ public class QuizGenerationService {
                 if (content.isBlank()) continue;
 
                 tried++;
-                Optional<GeneratedQuizDto> quizOpt =
-                        openAIQuizClient.generateQuiz(title, content, category, promptHistory);
+                Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(
+                        title, content, category, promptHistory, extraGenRules, extraVerifyRules);
                 if (quizOpt.isEmpty()) continue;
 
                 GeneratedQuizDto dto = quizOpt.get();
@@ -316,11 +323,32 @@ public class QuizGenerationService {
                 }
 
                 String url = item.originallink() != null ? item.originallink() : item.link();
+                saveTrial(category, true, tried, dto, title, url, extraGenRules, extraVerifyRules);
                 return com.example.pinq_backend.quiz.dto.TrialQuizResponse
                         .success(category.name(), tried, dto, title, url);
             }
         }
+        saveTrial(category, false, tried, null, null, null, extraGenRules, extraVerifyRules);
         return com.example.pinq_backend.quiz.dto.TrialQuizResponse.failure(category.name(), tried);
+    }
+
+    /** dry-run 결과를 실험 로그 테이블에 축적한다. 저장 실패가 dry-run 응답을 막지 않게 방어. */
+    private void saveTrial(
+            Category category, boolean success, int tried, GeneratedQuizDto dto,
+            String articleTitle, String articleUrl, String extraGenRules, String extraVerifyRules) {
+        try {
+            String choicesJson = dto == null ? null
+                    : trialObjectMapper.writeValueAsString(dto.getChoices());
+            trialQuizRepository.save(com.example.pinq_backend.quiz.domain.TrialQuiz.record(
+                    category.name(), success, tried,
+                    dto == null ? null : dto.getQuestion(),
+                    choicesJson,
+                    dto == null ? null : dto.getExplanation(),
+                    dto == null ? null : dto.getKeyword(),
+                    articleTitle, articleUrl, extraGenRules, extraVerifyRules));
+        } catch (Exception e) {
+            log.warn("[dry-run] 실험 로그 저장 실패 (응답에는 영향 없음)", e);
+        }
     }
 
     /**

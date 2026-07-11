@@ -40,10 +40,19 @@ public class QuizGenerationController {
         ));
     }
 
+    /**
+     * @param extraGenRules    (선택) 생성 프롬프트에 임시 주입할 실험 규칙
+     * @param extraVerifyRules (선택) Claude 검증에 임시 주입할 실험 기준
+     */
+    public record TrialGenerateRequest(String extraGenRules, String extraVerifyRules) {}
+
     @PostMapping("/test-generate")
     public ResponseEntity<TrialQuizResponse> testGenerate(
-        @RequestParam("category") Category category
+        @RequestParam("category") Category category,
+        @org.springframework.web.bind.annotation.RequestBody(required = false) TrialGenerateRequest request
     ) {
-        return ResponseEntity.ok(quizGenerationService.trialGenerate(category));
+        String gen = request != null ? request.extraGenRules() : null;
+        String verify = request != null ? request.extraVerifyRules() : null;
+        return ResponseEntity.ok(quizGenerationService.trialGenerate(category, gen, verify));
     }
 }

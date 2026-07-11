@@ -182,6 +182,11 @@ jobs:
               echo "SKIP: users.graduated_review_count 이미 존재"
             fi
 
+            # dry-run 실험 로그 테이블 — IF NOT EXISTS 로 멱등, 매 배포 실행
+            docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+              < scripts/migration/2026-07-11-add-trial-quiz.sql
+            echo "OK: trial_quiz 마이그레이션 실행"
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:

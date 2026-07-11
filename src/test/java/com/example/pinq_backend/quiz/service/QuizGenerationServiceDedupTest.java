@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -23,6 +24,7 @@ import com.example.pinq_backend.news.dto.NaverNewsItem;
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.quiz.repository.TrialQuizRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -57,6 +59,7 @@ class QuizGenerationServiceDedupTest {
     @Mock private OpenAIQuizClient openAIQuizClient;
     @Mock private QuizRepository quizRepository;
     @Mock private NewsArticleRepository newsArticleRepository;
+    @Mock private TrialQuizRepository trialQuizRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,7 +75,9 @@ class QuizGenerationServiceDedupTest {
                 quizRepository,
                 newsArticleRepository,
                 clock,
-                new QuizSimilarityChecker()
+                new QuizSimilarityChecker(),
+                trialQuizRepository,
+                objectMapper
         );
 
         // 공통 기본 동작: 뉴스 없음 / 오늘 퀴즈 없음 / 이력 없음 / 저장은 인자 그대로 반환
@@ -166,21 +171,24 @@ class QuizGenerationServiceDedupTest {
     // ── dry-run (trialGenerate) ──────────────────────────────────────────────
 
     @Test
-    @DisplayName("dry-run 은 파이프라인을 통과한 퀴즈를 반환하되 아무것도 저장하지 않는다")
+    @DisplayName("dry-run 은 파이프라인을 통과한 퀴즈를 반환하되 실데이터에는 저장하지 않는다")
     void trialGenerate_returnsQuizWithoutSaving() throws Exception {
         when(naverNewsClient.search(eq("기준금리"), anyInt()))
                 .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
         String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
-        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
+                anyList(), isNull(), isNull()))
                 .thenReturn(Optional.of(quizDto(fresh)));
 
-        var result = service.trialGenerate(Category.INTEREST_RATE);
+        var result = service.trialGenerate(Category.INTEREST_RATE, null, null);
 
         assertThat(result.success()).isTrue();
         assertThat(result.quiz().question()).isEqualTo(fresh);
         assertThat(result.candidatesTried()).isEqualTo(1);
         verify(quizRepository, never()).save(any());
         verify(newsArticleRepository, never()).save(any());
+        // 실험 로그에는 축적된다
+        verify(trialQuizRepository).save(any());
     }
 
     @Test
@@ -195,10 +203,11 @@ class QuizGenerationServiceDedupTest {
         when(naverNewsClient.search(eq("기준금리"), anyInt()))
                 .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
         String duplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
-        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
+                anyList(), isNull(), isNull()))
                 .thenReturn(Optional.of(quizDto(duplicate)));
 
-        var result = service.trialGenerate(Category.INTEREST_RATE);
+        var result = service.trialGenerate(Category.INTEREST_RATE, null, null);
 
         assertThat(result.success()).isFalse();
         assertThat(result.candidatesTried()).isEqualTo(1);
