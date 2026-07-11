@@ -18,6 +18,9 @@ public enum Category {
     EXCHANGE_RATE("환율"),
     STOCK("증시"),
     REAL_ESTATE("부동산"),
+    // 2026-07-11 신설. 프론트 Category enum 에도 반드시 추가 후 배포할 것 —
+    // 프론트가 모르는 카테고리의 퀴즈를 받으면 enum 파싱에서 깨질 수 있다.
+    INFLATION("물가"),
     ;
 
     private final String displayName;

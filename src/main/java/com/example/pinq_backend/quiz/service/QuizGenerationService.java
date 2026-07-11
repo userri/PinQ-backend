@@ -61,7 +61,10 @@ public class QuizGenerationService {
             Category.INTEREST_RATE, List.of("기준금리", "한국은행 금리", "예금 금리", "채권 금리", "대출 금리", "금리"),
             Category.EXCHANGE_RATE, List.of("원달러 환율", "달러 환율", "외환시장", "환율"),
             Category.STOCK,         List.of("코스피", "주가", "증시"),
-            Category.REAL_ESTATE,   List.of("주택담보대출", "아파트 매매", "전세", "부동산")
+            Category.REAL_ESTATE,   List.of("주택담보대출", "아파트 매매", "전세", "부동산"),
+            // INFLATION(2026-07-11 신설): 생활 밀착 소재로 뉴스 풀이 매일 풍부.
+            // "물가" 단독은 광범위해 최후 폴백으로.
+            Category.INFLATION,     List.of("소비자물가", "물가 상승", "인플레이션", "물가")
     );
 
     /** 카테고리당 키워드별 후보 뉴스 개수 */
