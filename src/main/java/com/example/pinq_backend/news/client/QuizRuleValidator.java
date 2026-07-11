@@ -225,8 +225,14 @@ public class QuizRuleValidator {
     /** 완곡(헤지) 표현 — 정답에만 있으면 문체 단서가 된다. "~할/늘어날/커질 수 있다" 활용형 포괄. */
     private static final Pattern HEDGE_EXPRESSION = Pattern.compile("수 있|가능성|경향");
 
-    /** 정답이 최장 보기이면서 오답 평균 길이의 이 배수 이상이면 길이 편향으로 폐기. */
-    private static final double ANSWER_LENGTH_RATIO_LIMIT = 1.5;
+    /**
+     * 정답이 최장 보기이면서 오답 평균 길이의 이 배수 이상이면 길이 편향으로 폐기.
+     *
+     * 1.5 → 1.3 하향(2026-07-11): gpt-4.1-mini 표본 8문항에서 최장=정답 5건의
+     * 비율이 1.19~1.48로 전부 1.5 직하에 분포 — 기존 문턱이 실질 무력화 상태였다.
+     * 1.3이면 5건 중 4건을 차단하면서 오답과 비슷한 길이의 정상 문항은 통과한다.
+     */
+    private static final double ANSWER_LENGTH_RATIO_LIMIT = 1.3;
 
     private Result checkDistractorQuality(GeneratedQuizDto quiz) {
         String answer = null;
