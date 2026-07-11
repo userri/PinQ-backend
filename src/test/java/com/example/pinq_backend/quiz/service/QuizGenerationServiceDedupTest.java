@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -160,6 +161,48 @@ class QuizGenerationServiceDedupTest {
         verify(openAIQuizClient).generateQuiz(
                 eq("기사C"), anyString(), eq(Category.EXCHANGE_RATE), historyCaptor.capture());
         assertThat(historyCaptor.getValue()).contains(first);
+    }
+
+    // ── dry-run (trialGenerate) ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("dry-run 은 파이프라인을 통과한 퀴즈를 반환하되 아무것도 저장하지 않는다")
+    void trialGenerate_returnsQuizWithoutSaving() throws Exception {
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
+        String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(fresh)));
+
+        var result = service.trialGenerate(Category.INTEREST_RATE);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.quiz().question()).isEqualTo(fresh);
+        assertThat(result.candidatesTried()).isEqualTo(1);
+        verify(quizRepository, never()).save(any());
+        verify(newsArticleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("dry-run 도 이력 유사 후보를 폐기한다 (실제 파이프라인과 동일 기준)")
+    void trialGenerate_rejectsSimilarCandidate() throws Exception {
+        Quiz pastQuiz = QuizFixtures.sampleQuiz(
+                1L, Category.INTEREST_RATE,
+                "미국 국채 금리가 상승하면 일반적으로 주식 시장에 미치는 영향은 무엇인가요?",
+                TODAY.minusDays(3));
+        when(quizRepository.findAllByQuizDateGreaterThanEqual(any()))
+                .thenReturn(List.of(pastQuiz));
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
+        String duplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(duplicate)));
+
+        var result = service.trialGenerate(Category.INTEREST_RATE);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.candidatesTried()).isEqualTo(1);
+        verify(quizRepository, never()).save(any());
     }
 
     private NaverNewsItem newsItem(String title, String url) {

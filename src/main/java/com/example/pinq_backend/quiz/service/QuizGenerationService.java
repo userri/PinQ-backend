@@ -271,6 +271,59 @@ public class QuizGenerationService {
     }
 
     /**
+     * 퀴즈 생성 dry-run — 실제 파이프라인 전체(뉴스 검색 → 생성 → 룰베이스 →
+     * Claude 검증 → 렉시컬 중복 검사)를 통과시키되 아무것도 저장하지 않는다.
+     *
+     * 용도: 프롬프트·검증 로직 변경 후 다음 날 06시를 기다리지 않고 즉시 품질 확인.
+     * 이력에 등록하지 않으므로(no register) 반복 호출해도 실제 생성에 영향 없다.
+     *
+     * 주의: 후보 리젝 사유는 응답에 없고 서버 로그로 확인한다
+     * (OpenAIQuizClient/QuizRuleValidator 가 이미 사유를 로깅함).
+     */
+    @Transactional(readOnly = true)
+    public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(Category category) {
+        LocalDate today = LocalDate.now(clock);
+        DedupHistory history = loadDedupHistory(today);
+        List<String> promptHistory = history.promptQuestionsFor(category);
+        List<String> keywords = CATEGORY_KEYWORDS.getOrDefault(
+                category, List.of(category.getDisplayName()));
+
+        int tried = 0;
+        for (String keyword : keywords) {
+            for (NaverNewsItem item : naverNewsClient.search(keyword, NEWS_FETCH_COUNT)) {
+                String title = item.cleanTitle();
+                if (title.isBlank()) continue;
+
+                String content = naverArticleScraper.scrape(item.link())
+                        .filter(s -> !s.isBlank())
+                        .orElseGet(item::cleanDescription);
+                if (content.isBlank()) continue;
+
+                tried++;
+                Optional<GeneratedQuizDto> quizOpt =
+                        openAIQuizClient.generateQuiz(title, content, category, promptHistory);
+                if (quizOpt.isEmpty()) continue;
+
+                GeneratedQuizDto dto = quizOpt.get();
+                if (!isValidQuiz(dto)) continue;
+
+                Optional<QuizSimilarityChecker.Match> similar =
+                        similarityChecker.findMostSimilar(dto.getQuestion(), history.lexicalPool());
+                if (similar.isPresent()) {
+                    log.info("[dry-run] 이력 유사로 폐기. candidate={}, existing={}",
+                            dto.getQuestion(), similar.get().existingQuestion());
+                    continue;
+                }
+
+                String url = item.originallink() != null ? item.originallink() : item.link();
+                return com.example.pinq_backend.quiz.dto.TrialQuizResponse
+                        .success(category.name(), tried, dto, title, url);
+            }
+        }
+        return com.example.pinq_backend.quiz.dto.TrialQuizResponse.failure(category.name(), tried);
+    }
+
+    /**
      * 이번 생성 사이클에서 쓰는 중복 방지 이력.
      *
      * @param promptQuestionsByCategory 카테고리별 최근 {@link #PROMPT_HISTORY_DAYS}일 문항.
