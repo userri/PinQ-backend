@@ -27,19 +27,24 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # 그 외 모든 요청은 HTTPS 로 영구 리다이렉트
+        # 그 외 모든 요청은 HTTPS 로 영구 리다이렉트 (요청 호스트 유지 —
+        # 이전 기간 중 구/신 도메인 어느 쪽으로 와도 자기 도메인의 HTTPS 로 보낸다)
         location / {
-            return 301 https://${DOMAIN}$request_uri;
+            return 301 https://$host$request_uri;
         }
     }
 
     # ── HTTPS (443): 본 서비스 ─────────────────────────────────────────────
     server {
         listen 443 ssl http2;
-        server_name ${DOMAIN};
+        # SERVER_NAMES = "DOMAIN [EXTRA_DOMAINS...]" — entrypoint.sh 가 조립.
+        # 도메인 이전 기간에 구/신 도메인을 동시에 서빙하기 위한 복수 지원.
+        server_name ${SERVER_NAMES};
 
-        ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+        # CERT_NAME = certbot 인증서 계보 이름 (기본값 DOMAIN). 기존 인증서에
+        # SAN 확장으로 새 도메인을 추가하면 live/ 경로는 최초 이름을 유지한다.
+        ssl_certificate     /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
 
         # Certbot/Mozilla 권장 TLS 옵션과 DH 파라미터를 init-letsencrypt.sh 에서 내려받아 사용한다.
         include /etc/letsencrypt/options-ssl-nginx.conf;

@@ -86,6 +86,9 @@ services:
       # :? — DOMAIN 이 없으면 compose 가 기동을 거부한다.
       # 없이 뜨면 nginx 가 TLS 없는 HTTP 로 조용히 폴백해 전체 트래픽이 평문이 된다.
       DOMAIN: ${DOMAIN:?DOMAIN is required (e.g. finq.duckdns.org) — without it nginx silently falls back to plain HTTP}
+      # 도메인 이전용 (선택): 함께 서빙할 추가 도메인(공백 구분) / certbot 인증서 계보 이름
+      EXTRA_DOMAINS: ${EXTRA_DOMAINS:-}
+      CERT_NAME: ${CERT_NAME:-}
     # 배포 디렉터리에 아래 nginx 템플릿/엔트리포인트 파일이 함께 있어야 한다.
     # deploy.sh 가 누락 여부를 사전에 검사한다.
     volumes:

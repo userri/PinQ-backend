@@ -15,9 +15,17 @@ if [ -z "${DOMAIN:-}" ]; then
 
   cp /etc/nginx/nginx.conf.legacy /etc/nginx/nginx.conf
 else
+  # 도메인 이전 지원:
+  #   EXTRA_DOMAINS — 주 도메인 외에 함께 서빙할 도메인들 (공백 구분, 선택)
+  #   CERT_NAME     — certbot 인증서 계보 이름 (기본 DOMAIN. 기존 인증서에 SAN 으로
+  #                   새 도메인을 추가하면 live/ 경로는 최초 이름을 유지하므로 필요)
+  CERT_NAME="${CERT_NAME:-$DOMAIN}"
+  SERVER_NAMES="$DOMAIN${EXTRA_DOMAINS:+ $EXTRA_DOMAINS}"
+  export CERT_NAME SERVER_NAMES
+
   # 인증서가 아직 없으면 친절히 안내 (init-letsencrypt.sh 가 더미를 만들어 둠)
-  if [ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
-    echo "WARN: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem 가 없습니다." >&2
+  if [ ! -f "/etc/letsencrypt/live/${CERT_NAME}/fullchain.pem" ]; then
+    echo "WARN: /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem 가 없습니다." >&2
     echo "      ./init-letsencrypt.sh 를 먼저 실행하세요." >&2
   fi
 
@@ -27,7 +35,7 @@ else
   fi
 
   # 템플릿 → 실제 nginx.conf
-  envsubst '${DOMAIN}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+  envsubst '${DOMAIN} ${SERVER_NAMES} ${CERT_NAME}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 fi
 
 # 인증서 갱신 반영을 위한 주기적 reload (백그라운드)
