@@ -46,7 +46,7 @@ public class TrialQuiz extends BaseTimeEntity {
 
     /** 보기 JSON 직렬화 (orderNum/content/answer) — 실험 로그라 정규화하지 않는다 */
     @Lob
-    @Column(name = "choices_json")
+    @Column(name = "choices_json", length = 65535) // MySQL TEXT 와 validate 정합
     private String choicesJson;
 
     @Column(name = "explanation", length = 2000)
@@ -63,12 +63,12 @@ public class TrialQuiz extends BaseTimeEntity {
 
     /** 실험용 임시 생성 규칙 (없으면 null = 현행 프롬프트 그대로) */
     @Lob
-    @Column(name = "extra_gen_rules")
+    @Column(name = "extra_gen_rules", length = 65535)
     private String extraGenRules;
 
     /** 실험용 임시 검증 기준 (없으면 null) */
     @Lob
-    @Column(name = "extra_verify_rules")
+    @Column(name = "extra_verify_rules", length = 65535)
     private String extraVerifyRules;
 
     public static TrialQuiz record(
