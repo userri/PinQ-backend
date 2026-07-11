@@ -54,8 +54,12 @@ public class QuizGenerationService {
      * 더 구체적인 키워드들을 우선 배치했다.
      */
     private static final Map<Category, List<String>> CATEGORY_KEYWORDS = Map.of(
-            Category.INTEREST_RATE, List.of("기준금리", "금리 인상", "금리"),
-            Category.EXCHANGE_RATE, List.of("원달러 환율", "달러 환율", "환율"),
+            // INTEREST_RATE 키워드 보강(2026-07-11): "금리" 광범위 키워드가 시황·임명 기사를
+            // 끌어와 무관 기사 유입 + 유사 중복 85.7%(172개 분석)의 원인이었음.
+            // 구체적 키워드를 앞에 배치하고 "금리" 단독은 최후 폴백으로 유지.
+            // "금리 인상" 같은 방향성 키워드는 금리 사이클이 바뀌면 빈 검색이 되므로 제외.
+            Category.INTEREST_RATE, List.of("기준금리", "한국은행 금리", "예금 금리", "채권 금리", "대출 금리", "금리"),
+            Category.EXCHANGE_RATE, List.of("원달러 환율", "달러 환율", "외환시장", "환율"),
             Category.STOCK,         List.of("코스피", "주가", "증시"),
             Category.REAL_ESTATE,   List.of("주택담보대출", "아파트 매매", "전세", "부동산")
     );
