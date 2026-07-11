@@ -169,3 +169,15 @@ echo "✓ .env APP_IMAGE_TAG=${IMAGE_TAG} 기록 (재기동 롤백 방지)"
 echo ""
 echo "✅ 배포 완료: $LIVE → $NEXT (태그: $IMAGE_TAG)"
 echo "   라이브: pinq-app-${NEXT}"
+
+# ── 배포 '후' 타임스탬프 보정 재실행 ─────────────────────────────────────
+# 배포 전 보정과 새 컨테이너 기동 사이에 구버전 컨테이너가 쓴 오염 행(+9h)까지
+# 마저 잡는다. 쿼리 자체가 멱등(미래 값만 보정)이라 안전. (기존 CI 인라인에서 이동)
+if [ -f scripts/migration/2026-07-08-fix-timestamp-shift.sql ]; then
+  set -a; . ./.env; set +a
+  MYSQL_CONTAINER=$(docker ps --format '{{.Names}}' | grep -m1 -i mysql)
+  docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" \
+    < scripts/migration/2026-07-08-fix-timestamp-shift.sql 2>/dev/null \
+    && echo "✓ 배포 후 타임스탬프 보정 완료" \
+    || echo "⚠ 배포 후 타임스탬프 보정 실패 (배포 자체는 성공)"
+fi
