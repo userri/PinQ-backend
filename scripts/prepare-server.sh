@@ -73,6 +73,16 @@ fi
 run_sql scripts/migration/2026-07-11-add-trial-quiz.sql
 echo "OK: trial_quiz 마이그레이션 실행"
 
+# news_article.category ENUM → VARCHAR(32) — 타입 검사로 멱등 가드
+CATEGORY_TYPE=$(docker exec "$MYSQL_CONTAINER" mysql -N -u"$DB_USERNAME" -p"$DB_PASSWORD" -e \
+  "SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$DB_NAME' AND TABLE_NAME='news_article' AND COLUMN_NAME='category'" 2>/dev/null)
+if [ "$CATEGORY_TYPE" = "enum" ]; then
+  run_sql scripts/migration/2026-07-12-news-article-category-varchar.sql
+  echo "OK: news_article.category ENUM→VARCHAR 마이그레이션 적용"
+else
+  echo "SKIP: news_article.category 이미 VARCHAR"
+fi
+
 # trial_quiz.model (모델 A/B 비교) — ADD COLUMN 이라 존재 가드 필요
 if [ "$(col_exists trial_quiz model)" = "0" ]; then
   run_sql scripts/migration/2026-07-11-add-trial-quiz-model.sql
