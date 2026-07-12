@@ -184,6 +184,11 @@ public class QuizGenerationService {
                 String title = item.cleanTitle();
                 if (title.isBlank()) continue;
 
+                if (isEditorialTitle(title)) {
+                    log.info("사설·칼럼 기사 건너뜀. category={}, title={}", category, title);
+                    continue;
+                }
+
                 // 이미 다른 카테고리에서 사용한 기사 건너뜀
                 String url = item.originallink() != null ? item.originallink() : item.link();
                 if (usedUrls.contains(url)) {
@@ -308,6 +313,10 @@ public class QuizGenerationService {
             for (NaverNewsItem item : naverNewsClient.search(keyword, NEWS_FETCH_COUNT)) {
                 String title = item.cleanTitle();
                 if (title.isBlank()) continue;
+                if (isEditorialTitle(title)) {
+                    log.info("[dry-run] 사설·칼럼 기사 건너뜀. title={}", title);
+                    continue;
+                }
 
                 String content = naverArticleScraper.scrape(item.link())
                         .filter(s -> !s.isBlank())
@@ -341,6 +350,23 @@ public class QuizGenerationService {
         saveTrial(category, false, tried, null, null, null,
                 genRulesForLog(extraGenRules, genPromptOverride), extraVerifyRules, model);
         return com.example.pinq_backend.quiz.dto.TrialQuizResponse.failure(category.name(), tried);
+    }
+
+    /**
+     * 사설·칼럼·기고류 판정 — 제목 코너명 기반 룰베이스 차단.
+     *
+     * 프롬프트 SKIP 기준("사설·칼럼 등 주관적 분석")이 있지만 LLM이 간헐적으로 놓침
+     * (2026-07-12 실사고: "[기자의 눈]" 칼럼이 INFLATION 퀴즈로 발행됨).
+     * 한국 언론의 오피니언 코너명은 제목에 정형화되어 있어 0원 룰베이스로 선차단한다.
+     */
+    private static final java.util.regex.Pattern EDITORIAL_TITLE = java.util.regex.Pattern.compile(
+            "\\[\\s*(사설|칼럼|기고|오피니언|시론|논단|데스크|기자수첩|취재수첩|여적|만물상"
+                    + "|기자의\\s*눈|데스크의\\s*눈|현장에서|편집국에서|특파원\\s*칼럼|[가-힣]{2,7}\\s*칼럼"
+                    + "|[가-힣]{2,4}의\\s*(눈|창|시각|시선|수첩|칼럼|썰))\\s*\\]"
+                    + "|^\\s*(사설|시론|기고)\\s*[:：\\-]");
+
+    private static boolean isEditorialTitle(String title) {
+        return EDITORIAL_TITLE.matcher(title).find();
     }
 
     /** 프롬프트 전면 교체 실험은 extra_gen_rules 컬럼에 마커와 함께 기록해 룰 주입 실험과 구분한다. */
