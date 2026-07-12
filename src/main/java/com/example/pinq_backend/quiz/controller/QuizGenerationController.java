@@ -46,9 +46,11 @@ public class QuizGenerationController {
      * @param model             (선택) 생성 모델 오버라이드 — 모델 A/B 비교용 (예: gpt-4.1)
      * @param genPromptOverride (선택) 생성 시스템 프롬프트 전면 교체 — 프롬프트 간소화 A/B.
      *                          응답 JSON 형식 지시를 반드시 포함할 것 (없으면 파싱 실패로 전량 폐기)
+     * @param verifyModel       (선택) 검증 모델 오버라이드 — 검증 A/B 비교용 (예: claude-opus-4-8)
      */
     public record TrialGenerateRequest(
-            String extraGenRules, String extraVerifyRules, String model, String genPromptOverride) {}
+            String extraGenRules, String extraVerifyRules, String model, String genPromptOverride,
+            String verifyModel) {}
 
     @PostMapping("/test-generate")
     public ResponseEntity<TrialQuizResponse> testGenerate(
@@ -59,7 +61,8 @@ public class QuizGenerationController {
         String verify = request != null ? request.extraVerifyRules() : null;
         String model = request != null ? request.model() : null;
         String promptOverride = request != null ? request.genPromptOverride() : null;
+        String verifyModel = request != null ? request.verifyModel() : null;
         return ResponseEntity.ok(
-                quizGenerationService.trialGenerate(category, gen, verify, model, promptOverride));
+                quizGenerationService.trialGenerate(category, gen, verify, model, promptOverride, verifyModel));
     }
 }

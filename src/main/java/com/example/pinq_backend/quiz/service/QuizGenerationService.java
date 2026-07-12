@@ -301,7 +301,7 @@ public class QuizGenerationService {
     @Transactional
     public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(
             Category category, String extraGenRules, String extraVerifyRules, String model,
-            String genPromptOverride) {
+            String genPromptOverride, String verifyModel) {
         LocalDate today = LocalDate.now(clock);
         DedupHistory history = loadDedupHistory(today);
         List<String> promptHistory = history.promptQuestionsFor(category);
@@ -326,7 +326,7 @@ public class QuizGenerationService {
                 tried++;
                 Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(
                         title, content, category, promptHistory, extraGenRules, extraVerifyRules,
-                        model, genPromptOverride);
+                        model, genPromptOverride, verifyModel);
                 if (quizOpt.isEmpty()) continue;
 
                 GeneratedQuizDto dto = quizOpt.get();

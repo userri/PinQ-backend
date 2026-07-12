@@ -62,6 +62,11 @@ public class AnthropicVerifyClient {
      * @return true면 정답 신뢰 가능 또는 검증 호출 실패(fail-open), false면 폐기 대상
      */
     public boolean verify(String verifyPrompt) {
+        return verify(verifyPrompt, null);
+    }
+
+    /** 검증 모델 A/B 실험용 오버로드 — modelOverride null 이면 운영 기본 모델. */
+    public boolean verify(String verifyPrompt, String modelOverride) {
         // API 키 미설정 시 불필요한 HTTP 호출 없이 즉시 fail-open 반환.
         // 경고는 생성자에서 1회 출력하므로 여기서는 별도 로그 없이 통과.
         if (props.apiKey() == null || props.apiKey().isBlank()) {
@@ -69,7 +74,7 @@ public class AnthropicVerifyClient {
         }
 
         Map<String, Object> requestBody = Map.of(
-                "model", props.model(),
+                "model", (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : props.model(),
                 "max_tokens", MAX_TOKENS,
                 "messages", List.of(
                         Map.of("role", "user", "content", verifyPrompt)

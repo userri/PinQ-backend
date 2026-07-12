@@ -101,7 +101,7 @@ public class OpenAIQuizClient {
             Category category,
             List<String> recentQuestions
     ) {
-        return generateQuiz(title, content, category, recentQuestions, null, null, null, null);
+        return generateQuiz(title, content, category, recentQuestions, null, null, null, null, null);
     }
 
     /**
@@ -120,7 +120,8 @@ public class OpenAIQuizClient {
             String extraGenRules,
             String extraVerifyRules,
             String modelOverride,
-            String genPromptOverride
+            String genPromptOverride,
+            String verifyModelOverride
     ) {
         // genPromptOverride: 시스템 프롬프트 전면 교체 실험용 (프롬프트 간소화 A/B).
         // 교체 프롬프트는 응답 JSON 형식 지시를 반드시 포함해야 한다 — 파싱이 깨지면 후보 전량 폐기됨.
@@ -161,7 +162,7 @@ public class OpenAIQuizClient {
             }
 
             // 2차: Claude cross-model 검증 (정답 정합성 + 이력과의 의미적 중복).
-            if (!verifyAnswer(quiz, recentQuestions, extraVerifyRules)) {
+            if (!verifyAnswer(quiz, recentQuestions, extraVerifyRules, verifyModelOverride)) {
                 return Optional.empty();
             }
 
@@ -191,7 +192,7 @@ public class OpenAIQuizClient {
      *
      * @return true면 정답 신뢰 가능, false면 폐기
      */
-    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions, String extraVerifyRules) {
+    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions, String extraVerifyRules, String verifyModelOverride) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .map(GeneratedQuizDto.ChoiceDto::getContent)
@@ -294,7 +295,7 @@ public class OpenAIQuizClient {
 
         // Anthropic Claude로 cross-model 검증 위임.
         // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
-        boolean valid = anthropicVerifyClient.verify(verifyPrompt);
+        boolean valid = anthropicVerifyClient.verify(verifyPrompt, verifyModelOverride);
         if (!valid) {
             log.info("Claude 검증 실패로 퀴즈 폐기. question={}", quiz.getQuestion());
         }
