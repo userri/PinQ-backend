@@ -26,6 +26,9 @@ class EditorialTitleFilterTest {
         assertThat(isEditorial("[김부장의 시선] 환율 방어전")).isTrue();
         assertThat(isEditorial("사설: 물가와 민생")).isTrue();
         assertThat(isEditorial("[기고] 부동산 세제 개편 방향")).isTrue();
+        // 실사고 2026-07-13: 에세이 코너가 필터를 통과해 STOCK 후보로 사용됨
+        assertThat(isEditorial("[한경에세이] 퇴직연금, 든든한 노후자금이 되려면")).isTrue();
+        assertThat(isEditorial("[에세이] 물가와 일상")).isTrue();
     }
 
     @Test

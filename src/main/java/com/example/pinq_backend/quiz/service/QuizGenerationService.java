@@ -362,6 +362,8 @@ public class QuizGenerationService {
     private static final java.util.regex.Pattern EDITORIAL_TITLE = java.util.regex.Pattern.compile(
             "\\[\\s*(사설|칼럼|기고|오피니언|시론|논단|데스크|기자수첩|취재수첩|여적|만물상"
                     + "|기자의\\s*눈|데스크의\\s*눈|현장에서|편집국에서|특파원\\s*칼럼|[가-힣]{2,7}\\s*칼럼"
+                    // 언론사명+에세이 코너 (실사고 2026-07-13: "[한경에세이]" 통과)
+                    + "|[가-힣]{0,7}에세이"
                     + "|[가-힣]{2,4}의\\s*(눈|창|시각|시선|수첩|칼럼|썰))\\s*\\]"
                     + "|^\\s*(사설|시론|기고)\\s*[:：\\-]");
 
