@@ -77,6 +77,16 @@ else
   echo "SKIP: user_quiz_attempt.first_elapsed_ms 이미 존재"
 fi
 
+# feedback TINYINT→INT 보정 — 타입 검사로 멱등 가드
+FEEDBACK_TYPE=$(docker exec "$MYSQL_CONTAINER" mysql -N -u"$DB_USERNAME" -p"$DB_PASSWORD" -e \
+  "SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$DB_NAME' AND TABLE_NAME='user_quiz_attempt' AND COLUMN_NAME='feedback'" 2>/dev/null)
+if [ "$FEEDBACK_TYPE" = "tinyint" ]; then
+  run_sql scripts/migration/2026-07-15-fix-feedback-int.sql
+  echo "OK: feedback TINYINT→INT 보정 적용"
+else
+  echo "SKIP: feedback 타입 정상"
+fi
+
 # dry-run 실험 로그 테이블 — IF NOT EXISTS 로 멱등, 매 배포 실행
 run_sql scripts/migration/2026-07-11-add-trial-quiz.sql
 echo "OK: trial_quiz 마이그레이션 실행"
