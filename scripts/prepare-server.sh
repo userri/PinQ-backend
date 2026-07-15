@@ -69,6 +69,14 @@ else
   echo "SKIP: users.graduated_review_count 이미 존재"
 fi
 
+# user_quiz_attempt 신호 컬럼(풀이 시간·피드백) — ADD COLUMN 이라 존재 가드 필요
+if [ "$(col_exists user_quiz_attempt first_elapsed_ms)" = "0" ]; then
+  run_sql scripts/migration/2026-07-15-attempt-signal-columns.sql
+  echo "OK: attempt 신호 컬럼 마이그레이션 적용"
+else
+  echo "SKIP: user_quiz_attempt.first_elapsed_ms 이미 존재"
+fi
+
 # dry-run 실험 로그 테이블 — IF NOT EXISTS 로 멱등, 매 배포 실행
 run_sql scripts/migration/2026-07-11-add-trial-quiz.sql
 echo "OK: trial_quiz 마이그레이션 실행"

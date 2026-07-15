@@ -89,6 +89,15 @@ public class QuizService {
     /** Phase 3 표준: 인증된 userId 기반 채점. */
     @Transactional
     public AnswerResponse checkAnswer(Long userId, Long quizId, Long selectedChoiceId) {
+        return checkAnswer(userId, quizId, selectedChoiceId, null);
+    }
+
+    /**
+     * 풀이 소요 시간(ms) 포함 채점 — 난이도 측정용 암묵 신호.
+     * elapsedMs 는 첫 시도에만 기록되며(재풀이는 무시), null 이면 기존과 동일.
+     */
+    @Transactional
+    public AnswerResponse checkAnswer(Long userId, Long quizId, Long selectedChoiceId, Integer elapsedMs) {
         Quiz quiz = quizRepository.findById(quizId)
             .orElseThrow(() -> new QuizNotFoundException(quizId));
 
@@ -110,8 +119,21 @@ public class QuizService {
             reviewService.enqueueWrongAnswer(userId, quizId);
         }
 
-        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct());
+        userService.recordAnswer(userId, quizId, selectedChoiceId, response.correct(), elapsedMs);
         return response;
+    }
+
+    /**
+     * 문제 피드백(1=좋아요, -1=별로예요) 기록 — 해설 화면의 선택적 1탭.
+     * 첫 시도 attempt 행에 저장하며, 풀지 않은 문제에는 기록할 수 없다.
+     * 재탭은 마지막 값으로 덮어쓴다 (멱등).
+     */
+    @Transactional
+    public void recordFeedback(Long userId, Long quizId, int value) {
+        com.example.pinq_backend.user.domain.UserQuizAttempt attempt = userQuizAttemptRepository
+            .findByUserIdAndQuizId(userId, quizId)
+            .orElseThrow(() -> new QuizNotFoundException(quizId));
+        attempt.recordFeedback(value);
     }
 
     /** Phase 2 하위 호환: demo 유저 기반 채점. */

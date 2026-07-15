@@ -27,6 +27,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -124,7 +125,7 @@ class QuizControllerTest {
     @Test
     @DisplayName("POST /api/quizzes/{id}/answer 는 채점 결과 + keyword + article 을 반환한다")
     void submitAnswer_returnsResult() throws Exception {
-        given(quizService.checkAnswer(anyLong(), eq(1L), eq(2L))).willReturn(new AnswerResponse(
+        given(quizService.checkAnswer(anyLong(), eq(1L), eq(2L), isNull())).willReturn(new AnswerResponse(
             1L,
             2L,
             true,
@@ -159,7 +160,7 @@ class QuizControllerTest {
     @Test
     @DisplayName("존재하지 않는 퀴즈에 답을 제출하면 404 를 반환한다")
     void submitAnswer_quizNotFound() throws Exception {
-        given(quizService.checkAnswer(anyLong(), eq(999L), eq(1L)))
+        given(quizService.checkAnswer(anyLong(), eq(999L), eq(1L), isNull()))
             .willThrow(new QuizNotFoundException(999L));
 
         mockMvc.perform(post("/api/quizzes/999/answer")

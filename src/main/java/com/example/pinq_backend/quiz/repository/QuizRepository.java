@@ -43,4 +43,45 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
     @EntityGraph(attributePaths = {"choices", "article"})
     @Query("SELECT q FROM Quiz q WHERE q.id IN :ids")
     List<Quiz> findAllWithChoicesAndArticleByIdIn(@Param("ids") Collection<Long> ids);
+
+    /**
+     * 문항별 난이도 통계 (admin 대시보드용).
+     *
+     * - 첫 시도만 기록되는 user_quiz_attempt 기준이라 정답률이 재풀이로 오염되지 않는다.
+     * - 풀이 시간은 집계 시점에 3분(180000ms)으로 절단 — 앱 방치 이상치가 평균을 오염시키지
+     *   않도록 하되, 원본은 보존한다 (임계값 변경 시 과거 데이터 재집계 가능).
+     */
+    @Query(value = """
+        SELECT q.id AS quizId,
+               q.quiz_date AS quizDate,
+               na.category AS category,
+               q.question AS question,
+               COUNT(a.id) AS attempts,
+               COALESCE(SUM(a.first_correct), 0) AS correctCount,
+               ROUND(AVG(a.first_correct) * 100, 1) AS correctRate,
+               ROUND(AVG(LEAST(a.first_elapsed_ms, 180000)) / 1000, 1) AS avgElapsedSec,
+               COALESCE(SUM(a.feedback = 1), 0) AS upvotes,
+               COALESCE(SUM(a.feedback = -1), 0) AS downvotes
+        FROM quiz q
+        JOIN news_article na ON q.article_id = na.id
+        LEFT JOIN user_quiz_attempt a ON a.quiz_id = q.id
+        WHERE q.quiz_date >= :fromDate
+        GROUP BY q.id, q.quiz_date, na.category, q.question
+        ORDER BY q.quiz_date DESC, na.category
+        """, nativeQuery = true)
+    List<QuizStatRow> findQuizStatsSince(@Param("fromDate") LocalDate fromDate);
+
+    /** findQuizStatsSince 결과 인터페이스 프로젝션. */
+    interface QuizStatRow {
+        Long getQuizId();
+        java.time.LocalDate getQuizDate();
+        String getCategory();
+        String getQuestion();
+        Long getAttempts();
+        Long getCorrectCount();
+        Double getCorrectRate();
+        Double getAvgElapsedSec();
+        Long getUpvotes();
+        Long getDownvotes();
+    }
 }

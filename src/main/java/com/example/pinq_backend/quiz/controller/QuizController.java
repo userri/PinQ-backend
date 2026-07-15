@@ -42,6 +42,20 @@ public class QuizController {
         @Valid @RequestBody AnswerRequest request
     ) {
         Long userId = SecurityUtils.getCurrentUserId(userService);
-        return quizService.checkAnswer(userId, quizId, request.choiceId());
+        return quizService.checkAnswer(userId, quizId, request.choiceId(), request.elapsedMs());
+    }
+
+    /**
+     * 문제 피드백 — 해설 화면의 선택적 1탭 (1=좋아요, -1=별로예요).
+     * 풀지 않은 문제에는 404. 재탭은 마지막 값으로 덮어쓴다.
+     */
+    @PostMapping("/{quizId}/feedback")
+    public java.util.Map<String, String> submitFeedback(
+        @PathVariable Long quizId,
+        @Valid @RequestBody com.example.pinq_backend.quiz.dto.FeedbackRequest request
+    ) {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        quizService.recordFeedback(userId, quizId, request.value());
+        return java.util.Map.of("message", "피드백이 기록되었습니다");
     }
 }

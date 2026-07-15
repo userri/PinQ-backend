@@ -65,17 +65,45 @@ public class UserQuizAttempt extends BaseTimeEntity {
     @Column(name = "first_selected_choice_id")
     private Long firstSelectedChoiceId;
 
+    /**
+     * 첫 시도 풀이 소요 시간(ms). 클라이언트가 포그라운드 시간만 측정해 전송.
+     * 이상치(앱 방치)는 저장 시 자르지 않고 원본을 보존한다 — 집계 시점에 절단(LEAST 캡).
+     * legacy 데이터·미전송 클라이언트는 NULL.
+     */
+    @Column(name = "first_elapsed_ms")
+    private Integer firstElapsedMs;
+
+    /** 문제 피드백: 1=좋아요, -1=별로예요, NULL=미응답. 해설 화면의 선택적 1탭. */
+    @Column(name = "feedback")
+    private Integer feedback;
+
     public static UserQuizAttempt create(
         User user,
         Long quizId,
         Long selectedChoiceId,
         boolean isCorrect
     ) {
+        return create(user, quizId, selectedChoiceId, isCorrect, null);
+    }
+
+    public static UserQuizAttempt create(
+        User user,
+        Long quizId,
+        Long selectedChoiceId,
+        boolean isCorrect,
+        Integer elapsedMs
+    ) {
         UserQuizAttempt a = new UserQuizAttempt();
         a.user = user;
         a.quizId = quizId;
         a.firstSelectedChoiceId = selectedChoiceId;
         a.firstCorrect = isCorrect;
+        a.firstElapsedMs = elapsedMs;
         return a;
+    }
+
+    /** 해설 화면 피드백 기록. 재탭 시 마지막 값으로 덮어쓴다 (멱등). */
+    public void recordFeedback(int value) {
+        this.feedback = value;
     }
 }

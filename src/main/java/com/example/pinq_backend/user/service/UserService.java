@@ -48,7 +48,7 @@ public class UserService {
     @Transactional
     public void recordAnswer(Long quizId, Long selectedChoiceId, boolean isCorrect) {
         User user = findOrCreateDemoUser();
-        recordAnswerForUser(user, quizId, selectedChoiceId, isCorrect);
+        recordAnswerForUser(user, quizId, selectedChoiceId, isCorrect, null);
     }
 
     /**
@@ -118,9 +118,15 @@ public class UserService {
      */
     @Transactional
     public void recordAnswer(Long userId, Long quizId, Long selectedChoiceId, boolean isCorrect) {
+        recordAnswer(userId, quizId, selectedChoiceId, isCorrect, null);
+    }
+
+    /** 풀이 소요 시간(ms) 포함 버전 — 클라이언트가 elapsedMs 를 보내면 첫 시도에만 기록된다. */
+    public void recordAnswer(Long userId, Long quizId, Long selectedChoiceId, boolean isCorrect,
+                             Integer elapsedMs) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("id=" + userId));
-        recordAnswerForUser(user, quizId, selectedChoiceId, isCorrect);
+        recordAnswerForUser(user, quizId, selectedChoiceId, isCorrect, elapsedMs);
     }
 
     /**
@@ -200,7 +206,8 @@ public class UserService {
      *   UK 제약(uk_user_quiz_attempt)이 방어선. DataIntegrityViolationException 은
      *   중복 시도로 간주하고 조용히 종료한다.
      */
-    private void recordAnswerForUser(User user, Long quizId, Long selectedChoiceId, boolean isCorrect) {
+    private void recordAnswerForUser(User user, Long quizId, Long selectedChoiceId, boolean isCorrect,
+                                     Integer elapsedMs) {
         if (userQuizAttemptRepository.existsByUserIdAndQuizId(user.getId(), quizId)) {
             synchronizeStreakFromAttempts(user, LocalDate.now(clock));
             return;
@@ -210,7 +217,7 @@ public class UserService {
 
         try {
             userQuizAttemptRepository.saveAndFlush(
-                    UserQuizAttempt.create(user, quizId, selectedChoiceId, isCorrect)
+                    UserQuizAttempt.create(user, quizId, selectedChoiceId, isCorrect, elapsedMs)
             );
         } catch (DataIntegrityViolationException ignored) {
             synchronizeStreakFromAttempts(user, today);
