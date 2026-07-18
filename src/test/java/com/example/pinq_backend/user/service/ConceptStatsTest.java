@@ -30,13 +30,14 @@ class ConceptStatsTest {
     @Mock private UserService userService;
     @Mock private UserQuizAttemptRepository userQuizAttemptRepository;
     @Mock private ReviewDailyLogRepository reviewDailyLogRepository;
+    @Mock private com.example.pinq_backend.quiz.repository.QuizRepository quizRepository;
 
     private UserStatsService service;
 
     @BeforeEach
     void setUp() {
         service = new UserStatsService(
-                userService, userQuizAttemptRepository, reviewDailyLogRepository,
+                userService, userQuizAttemptRepository, reviewDailyLogRepository, quizRepository,
                 Clock.system(ZoneId.of("Asia/Seoul")));
     }
 

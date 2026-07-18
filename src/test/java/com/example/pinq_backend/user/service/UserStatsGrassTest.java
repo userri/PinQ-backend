@@ -38,6 +38,7 @@ class UserStatsGrassTest {
     @Mock private UserService userService;
     @Mock private UserQuizAttemptRepository userQuizAttemptRepository;
     @Mock private ReviewDailyLogRepository reviewDailyLogRepository;
+    @Mock private com.example.pinq_backend.quiz.repository.QuizRepository quizRepository;
 
     private UserStatsService service;
     private User user;
@@ -46,7 +47,7 @@ class UserStatsGrassTest {
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(KST).toInstant(), KST);
         service = new UserStatsService(
-                userService, userQuizAttemptRepository, reviewDailyLogRepository, clock);
+                userService, userQuizAttemptRepository, reviewDailyLogRepository, quizRepository, clock);
 
         user = User.builder().nickname("tester").build();
         user.syncStreak(3, 15, TODAY);
@@ -90,6 +91,44 @@ class UserStatsGrassTest {
                 .containsExactly(d1, d2, d3, d4); // 날짜 오름차순
         assertThat(grass.days()).extracting(GrassResponse.GrassDay::level)
                 .containsExactly(1, 2, 3, 4);
+    }
+
+    @Test
+    @DisplayName("결손일(3문제 발행)엔 3문제 전부 정답이면 만점, 백필로 5문제가 돼도 4문제 만점은 유지된다")
+    void grass_targetIsMinOfCapAndPublished() {
+        LocalDate shortDay = TODAY.minusDays(2);   // 3문제만 발행된 날 — 3/3 정답
+        LocalDate backfillDay = TODAY.minusDays(1); // 백필로 5문제 발행 — 4/4 정답
+
+        when(userQuizAttemptRepository.countAttemptsByDateBetween(eq(USER_ID), any(), any()))
+                .thenReturn(List.<Object[]>of(
+                        new Object[]{shortDay, 3L},
+                        new Object[]{backfillDay, 4L}
+                ));
+        when(userQuizAttemptRepository.countFirstCorrectByDateBetween(eq(USER_ID), any(), any()))
+                .thenReturn(List.<Object[]>of(
+                        new Object[]{shortDay, 3L},
+                        new Object[]{backfillDay, 4L}
+                ));
+        when(quizRepository.countPublishedByDateBetween(any(), any()))
+                .thenReturn(List.of(
+                        publishedRow(shortDay, 3L),
+                        publishedRow(backfillDay, 5L)
+                ));
+
+        GrassResponse grass = service.getGrass(USER_ID);
+
+        // 3발행일: min(4,3)=3 → 3/3 만점 / 5발행일: min(4,5)=4 → 4/4 만점 (소급 강등 없음)
+        assertThat(grass.days()).extracting(GrassResponse.GrassDay::level)
+                .containsExactly(4, 4);
+        assertThat(grass.perfectDays()).isEqualTo(2);
+    }
+
+    private com.example.pinq_backend.quiz.repository.QuizRepository.PublishedCountRow publishedRow(
+            LocalDate date, Long cnt) {
+        return new com.example.pinq_backend.quiz.repository.QuizRepository.PublishedCountRow() {
+            @Override public LocalDate getQuizDate() { return date; }
+            @Override public Long getCnt() { return cnt; }
+        };
     }
 
     @Test

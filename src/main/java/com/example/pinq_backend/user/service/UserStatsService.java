@@ -33,6 +33,7 @@ public class UserStatsService {
     private final UserService userService;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
     private final ReviewDailyLogRepository reviewDailyLogRepository;
+    private final com.example.pinq_backend.quiz.repository.QuizRepository quizRepository;
     private final Clock clock;
 
     /** Phase 3 표준: 인증된 userId 로 통계를 조회한다. */
@@ -122,16 +123,14 @@ public class UserStatsService {
     private static final int GRASS_DAYS = 365;
 
     /**
-     * 만점/완주(level 3~4) 판정의 최소 기준 문항 수.
+     * 만점/완주(level 3~4) 판정 목표치의 '상한'.
      *
-     * ⚠️ '그날 실제 발행된 문제 수'와 의도적으로 분리돼 있다 — 발행 수에 연동하면 안 된다.
-     * 카테고리가 5개로 늘었어도(INFLATION 추가) 이 값은 4로 둔다. 이유:
-     *  - 백필 면역: 아침에 4문제 맞혀 만점(solved>=4)이 된 사용자는, 이후 누락분이
-     *    백필돼 그날 발행 수가 5가 돼도 만점이 유지된다. 발행 수 연동 시 소급으로
-     *    "미완료" 강등이 발생한다(2026-07-18 백필 설계에서 확인).
-     *  - 결손일 면역: 급변동일 등으로 4문제만 발행돼도 만점 성립이 가능하다.
-     * 즉 "발행 수와 무관하게, 4문제 이상 풀고 전부 맞히면 만점"이 규칙이다.
-     * (한계: 발행 수가 4 미만인 날은 만점 도달 불가 — grassLevel javadoc 참조.)
+     * 실제 목표치는 min(이 값, 그날 발행 문제 수)로 계산한다 (grassLevel 참조).
+     *  - 상한 4 유지 이유(백필 면역): 아침에 4문제 맞혀 만점이 된 사용자는 이후
+     *    누락분이 백필돼 발행 수가 5가 돼도 min(4,5)=4 라 만점이 유지된다.
+     *    상한 없이 발행 수에 그대로 연동하면 소급 "미완료" 강등이 발생한다.
+     *  - min 을 취하는 이유(결손일 대응): 급변동일 등으로 3문제만 발행된 날도
+     *    "그날 나온 문제를 전부 맞히면" 만점이 성립해야 공정하다 (2026-07-18 논의).
      */
     private static final int DAILY_SET_SIZE = 4;
 
@@ -165,6 +164,12 @@ public class UserStatsService {
                         ReviewDailyLog::getReviewDate,
                         ReviewDailyLog::getReviewedCount
                 ));
+        Map<LocalDate, Integer> publishedByDate = quizRepository
+                .countPublishedByDateBetween(from, today).stream()
+                .collect(Collectors.toMap(
+                        com.example.pinq_backend.quiz.repository.QuizRepository.PublishedCountRow::getQuizDate,
+                        row -> row.getCnt().intValue()
+                ));
 
         // 신규 학습을 한 날과 복습만 한 날의 합집합이 '활동일'이다.
         Set<LocalDate> activeDates = new java.util.TreeSet<>(attemptsByDate.keySet());
@@ -176,7 +181,8 @@ public class UserStatsService {
                     int correct = correctByDate.getOrDefault(date, 0);
                     int reviewed = reviewedByDate.getOrDefault(date, 0);
                     return new GrassResponse.GrassDay(
-                            date, solved, correct, reviewed, grassLevel(solved, correct));
+                            date, solved, correct, reviewed,
+                            grassLevel(solved, correct, publishedByDate.getOrDefault(date, 0)));
                 })
                 .toList();
 
@@ -194,16 +200,21 @@ public class UserStatsService {
     /**
      * 잔디 농도 (1~4). 활동 없는 날은 응답에서 제외되므로 0 은 없다.
      *  1 = 1~2문제, 또는 신규 학습 없이 복습만 한 날 (연한 잔디)
-     *  2 = 3문제, 3 = 완주(4문제+), 4 = 완주 + 전부 정답 (만점 잔디)
+     *  2 = 3문제 (목표 미달), 3 = 완주(목표치 이상), 4 = 완주 + 전부 정답 (만점 잔디)
+     *
+     * 완주 목표치 = min(DAILY_SET_SIZE, 그날 발행 수) — 결손일에도 "나온 문제를
+     * 전부 맞히면 만점"이 성립하고, 상한 덕에 늦은 백필이 기존 만점을 강등하지 않는다.
+     * published 가 0(발행 기록 없음 — 과거 데이터 정리 등 예외 상황)이면 상한을 그대로 쓴다.
      *
      * 복습 수를 인자로 받지 않는 이유: 잔디 농도는 '신규 학습'의 지표이며,
      * 복습을 아무리 많이 해도 level 1 을 넘지 않아야 한다 (solved=0 → 1).
      */
-    private static int grassLevel(int solved, int correct) {
+    private static int grassLevel(int solved, int correct, int published) {
         if (solved == 0) {
             return 1; // 복습만 한 날 — 연한 잔디
         }
-        if (solved >= DAILY_SET_SIZE) {
+        int target = published > 0 ? Math.min(DAILY_SET_SIZE, published) : DAILY_SET_SIZE;
+        if (solved >= target) {
             return correct >= solved ? 4 : 3;
         }
         return solved >= 3 ? 2 : 1;

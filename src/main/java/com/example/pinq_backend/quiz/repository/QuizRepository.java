@@ -25,6 +25,17 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
     /** 특정 날짜의 퀴즈 개수 확인. */
     long countByQuizDate(LocalDate quizDate);
 
+    /** 기간 내 일별 발행 문제 수 — 잔디 만점 판정(그날 발행 수 기준 목표치)에 사용. */
+    @Query("SELECT q.quizDate AS quizDate, COUNT(q) AS cnt FROM Quiz q "
+            + "WHERE q.quizDate BETWEEN :from AND :to GROUP BY q.quizDate")
+    List<PublishedCountRow> countPublishedByDateBetween(
+            @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    interface PublishedCountRow {
+        LocalDate getQuizDate();
+        Long getCnt();
+    }
+
     /** 특정 날짜의 퀴즈 전체 삭제 (재생성 시 사용). */
     List<Quiz> findAllByQuizDate(LocalDate quizDate);
 
