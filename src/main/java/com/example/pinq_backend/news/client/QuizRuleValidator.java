@@ -190,6 +190,15 @@ public class QuizRuleValidator {
         Result langResult = checkKoreanOnly(quiz);
         if (!langResult.valid()) return langResult;
 
+        // 5) keyword 형식 검사 — "용어: 정의" 형식이어야 하는데 단어 나열이면 폐기.
+        //    운영 재발 사례(id 289, 318 등): "수리비, 소비자물가지수, 부품가격 상승, ..."
+        //    콜론 없이 콤마 2개 이상이면 정의 없는 나열형으로 판정한다.
+        String keyword = quiz.getKeyword();
+        if (keyword != null && !keyword.contains(":") && !keyword.contains("：")
+                && keyword.chars().filter(ch -> ch == ',').count() >= 2) {
+            return Result.fail("keyword 나열형 (\"용어: 정의\" 형식 위반): " + keyword);
+        }
+
         return Result.ok();
     }
 

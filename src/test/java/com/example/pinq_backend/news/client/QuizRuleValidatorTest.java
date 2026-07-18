@@ -171,6 +171,40 @@ class QuizRuleValidatorTest {
     }
 
     /** 정답 1개 + 오답 3개로 4지선다 DTO 구성. */
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("keyword가 콜론 없는 나열형이면 폐기한다")
+    void listFormKeyword_isRejected() throws Exception {
+        GeneratedQuizDto q = quizWithKeyword("수리비, 소비자물가지수, 부품가격 상승, 물가 상승 메커니즘");
+        QuizRuleValidator.Result result = validator.validate(q);
+        org.assertj.core.api.Assertions.assertThat(result.valid()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(result.reason()).contains("나열형");
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("콜론이 있으면 정의 안에 콤마가 여러 개여도 통과한다")
+    void definitionKeywordWithCommas_passes() throws Exception {
+        GeneratedQuizDto q = quizWithKeyword("통화량(M2): 현금, 예금, 수시입출금 등을 포함하는 광의통화 지표");
+        org.assertj.core.api.Assertions.assertThat(validator.validate(q).valid()).isTrue();
+    }
+
+    private GeneratedQuizDto quizWithKeyword(String keyword) throws Exception {
+        String json = """
+                {
+                  "skip": false,
+                  "question": "기준금리와 무관한 일반 질문은 무엇인가?",
+                  "choices": [
+                    {"orderNum": 1, "content": "정답 보기입니다", "isAnswer": true},
+                    {"orderNum": 2, "content": "오답 보기 하나입니다", "isAnswer": false},
+                    {"orderNum": 3, "content": "오답 보기 둘입니다", "isAnswer": false},
+                    {"orderNum": 4, "content": "오답 보기 셋입니다", "isAnswer": false}
+                  ],
+                  "explanation": "정답 해설입니다.",
+                  "keyword": "%s"
+                }
+                """.formatted(keyword);
+        return objectMapper.readValue(json, GeneratedQuizDto.class);
+    }
+
     private GeneratedQuizDto quiz(String question, String answer, List<String> distractors) throws Exception {
         String json = """
                 {

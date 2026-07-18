@@ -60,7 +60,10 @@ public class QuizGenerationService {
             // "금리 인상" 같은 방향성 키워드는 금리 사이클이 바뀌면 빈 검색이 되므로 제외.
             Category.INTEREST_RATE, List.of("기준금리", "한국은행 금리", "예금 금리", "채권 금리", "대출 금리", "금리"),
             Category.EXCHANGE_RATE, List.of("원달러 환율", "달러 환율", "외환시장", "환율"),
-            Category.STOCK,         List.of("코스피", "주가", "증시"),
+            // STOCK 폴백 보강(2026-07-18): 급변동일엔 "코스피/주가/증시"가 시황·급락
+            // 기사로 도배돼 전량 SKIP → 4/5 발행 사고. 개념성 키워드는 급변동일에도
+            // 평시 기사를 반환하므로 뒤에 배치해 풀 퇴화를 완충한다.
+            Category.STOCK,         List.of("코스피", "주가", "증시", "배당", "공모주", "ETF"),
             Category.REAL_ESTATE,   List.of("주택담보대출", "아파트 매매", "전세", "부동산"),
             // INFLATION(2026-07-11 신설): 생활 밀착 소재로 뉴스 풀이 매일 풍부.
             // "물가" 단독은 광범위해 최후 폴백으로.
@@ -98,18 +101,64 @@ public class QuizGenerationService {
     private final com.fasterxml.jackson.databind.ObjectMapper trialObjectMapper;
 
     /**
-     * 오늘 퀴즈가 없을 때만 생성한다 — 자가치유 가드용. 있으면 아무것도 하지 않는다.
-     * 자정 정기 생성이 실패했거나(외부 API 장애) 그 시각에 서버가 내려가 있던 경우
-     * (배포/재시작 등)를 매시간 재시도로 복구한다.
+     * 부분 누락 백필 마감 시각. 이 시각 이후에는 일부 카테고리가 비어 있어도 채우지 않는다.
+     *
+     * 이유: 늦게 추가된 문제는 이미 그날 풀이를 끝낸 사용자를 소급으로 "미완료"로
+     * 만들 수 있고(만점 판정이 그날 문제 수 기준), 접근 가능한 사용자도 적어
+     * 형평성·정답률 데이터가 왜곡된다. 아침 이른 시간(대부분 풀이 전)의 일시 장애
+     * 복구만 허용한다. (2026-07-18 STOCK 4/5 발행 사례에서 도출)
+     */
+    private static final java.time.LocalTime PARTIAL_BACKFILL_CUTOFF = java.time.LocalTime.of(8, 30);
+
+    /**
+     * 자가치유 가드 (매시 10분 실행).
+     *  - 오늘 퀴즈가 하나도 없으면: 전체 생성 (정기 생성 시각의 서버 다운·API 장애 복구)
+     *  - 일부 카테고리만 비었으면: 08:30 이전에 한해 누락분만 백필
+     *  - 그 외: no-op
      */
     @Transactional
     public int ensureTodayQuizzes() {
         LocalDate today = LocalDate.now(clock);
-        if (!quizRepository.findAllByQuizDate(today).isEmpty()) {
-            return 0;
+        List<Quiz> existing = quizRepository.findAllByQuizDate(today);
+
+        if (existing.isEmpty()) {
+            log.info("오늘({}) 퀴즈가 없어 가드가 생성을 시작한다", today);
+            return generateTodayQuizzes();
         }
-        log.info("오늘({}) 퀴즈가 없어 가드가 생성을 시작한다", today);
-        return generateTodayQuizzes();
+
+        // 부분 누락(일부 카테고리 실패) — 마감 시각 이전에만 누락분을 채운다
+        Set<Category> present = existing.stream()
+                .map(Quiz::getCategory)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        List<Category> missing = java.util.Arrays.stream(Category.values())
+                .filter(c -> !present.contains(c))
+                .toList();
+        if (missing.isEmpty()) return 0;
+
+        java.time.LocalTime now = java.time.LocalTime.now(clock);
+        if (now.isAfter(PARTIAL_BACKFILL_CUTOFF)) {
+            return 0; // 늦은 백필은 소급 피해가 커서 그날은 결손으로 확정
+        }
+
+        log.info("오늘({}) 부분 누락 백필 시작. missing={}", today, missing);
+        DedupHistory history = loadDedupHistory(today);
+        // 오늘 이미 사용된 기사 URL 재사용 방지
+        Set<String> usedUrls = existing.stream()
+                .map(q -> q.getArticle() != null ? q.getArticle().getUrl() : null)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        int generated = 0;
+        for (Category category : missing) {
+            try {
+                if (generateQuizForCategory(category, today, usedUrls, history)) generated++;
+            } catch (Exception e) {
+                log.error("부분 백필 중 카테고리 {} 생성 예외", category, e);
+            }
+        }
+        log.info("부분 누락 백필 완료. 성공={}/{}", generated, missing.size());
+        return generated;
     }
 
     /**
