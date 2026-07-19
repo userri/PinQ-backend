@@ -118,6 +118,38 @@ services:
     entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
     restart: unless-stopped
 
+  # ── MySQL — 독립 컨테이너에서 compose 편입 (2026-07-19) ─────────────────
+  # 원래 초기 셋업 때 docker run 으로 띄운 컨테이너였음. IntelliJ 등 로컬 도구의
+  # SSH 터널 접속을 위해 루프백 한정 포트를 열면서 compose 관리로 정식 편입.
+  #
+  # ⚠️ 최초 1회 전환 절차 (데이터는 mysql-data 볼륨에 있어 안전):
+  #   docker rm -f mysql-container && docker compose up -d mysql
+  #   (10~20초 DB 중단 — 앱은 HikariCP 가 자동 재접속. 한산한 시간에 실행)
+  #
+  # MYSQL_* 환경변수는 데이터 볼륨이 비어 있을 때(최초 초기화)만 적용되므로
+  # 기존 볼륨 인수 시에는 값이 달라도 무해하다.
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-container
+    ports:
+      # 루프백 한정 — 서버 안에서만 접속 가능. 외부(0.0.0.0) 노출 아님.
+      # 로컬 IntelliJ 는 SSH 터널로 localhost:3306 에 붙는다.
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-pinq_db}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - resources_default
+
+volumes:
+  # 기존 독립 컨테이너가 쓰던 볼륨을 그대로 인수 (external — compose 가 생성/삭제하지 않음)
+  mysql-data:
+    external: true
+
 networks:
   resources_default:
     external: true
