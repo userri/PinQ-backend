@@ -27,7 +27,10 @@ x-app-common: &app-common
     # +9h 변환 → DB 에 익일 08:00 으로 저장되는 이중 변환 버그가 있었다.
     # JVM 기본 TZ = 커넥션 TZ = KST 로 맞추면 변환이 항등이 되어 근본 차단된다.
     TZ: Asia/Seoul
-    JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Seoul"
+    # -Xmx320m: 843MB 램 VM 에 MySQL·Redis·nginx 와 동거하므로 힙 상한을 명시.
+    # 상한이 없으면 JVM 이 램의 1/4~1/2 을 잠재 힙으로 잡아 스왑 압박에 가담한다
+    # (2026-07-20 측정: 스왑 사용 826MB, MySQL 쿼리 스파이크 2146ms — perf-baseline-before.log)
+    JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Seoul -Xmx320m"
     SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
     DB_HOST: ${DB_HOST}
     DB_PORT: ${DB_PORT:-3306}
@@ -135,6 +138,11 @@ services:
       # 루프백 한정 — 서버 안에서만 접속 가능. 외부(0.0.0.0) 노출 아님.
       # 로컬 IntelliJ 는 SSH 터널로 localhost:3306 에 붙는다.
       - "127.0.0.1:3306:3306"
+    # performance_schema=OFF: 진단용 계측 테이블이 메모리 ~150MB+ 를 상시 점유.
+    # 843MB 램 VM 에선 이 비용이 MySQL 을 통째로 스왑으로 밀어내 간헐 2초 지연을
+    # 유발했다 (2026-07-20 측정: vmstat si 상시 발생, 쿼리 스파이크 2146/507/259ms).
+    # 우리 규모(단일 앱, 소형 DB)에선 슬로우 쿼리 로그로 충분해 끈다.
+    command: --performance-schema=OFF
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME:-pinq_db}
