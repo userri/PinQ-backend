@@ -12,25 +12,26 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * 네이버 뉴스 검색 API 클라이언트.
+ * 네이버 뉴스 검색 API 클라이언트 (NAVER API Hub).
  *
- * GET https://openapi.naver.com/v1/search/news
+ * GET https://naverapihub.apigw.ntruss.com/search/v1/news
  *   ?query={keyword}&display={count}&sort=date
  *
- * 인증: X-Naver-Client-Id / X-Naver-Client-Secret 헤더.
+ * 인증: X-NCP-APIGW-API-KEY-ID / X-NCP-APIGW-API-KEY 헤더.
+ * (구 Search API openapi.naver.com 은 2027-06-30 종료 예정이라 API Hub 로 이관)
  */
 @Slf4j
 @Component
 public class NaverNewsClient {
 
-    private static final String BASE_URL = "https://openapi.naver.com/v1/search/news";
+    private static final String BASE_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news";
 
     private final RestClient restClient;
 
     public NaverNewsClient(NaverNewsProperties props) {
         this.restClient = RestClient.builder()
-            .defaultHeader("X-Naver-Client-Id", props.clientId())
-            .defaultHeader("X-Naver-Client-Secret", props.clientSecret())
+            .defaultHeader("X-NCP-APIGW-API-KEY-ID", props.clientId())
+            .defaultHeader("X-NCP-APIGW-API-KEY", props.clientSecret())
             .build();
     }
 
