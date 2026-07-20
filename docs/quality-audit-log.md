@@ -110,3 +110,8 @@
 - 경계: 325 해설 정합 누수 — 해설 중간 문장이 메커니즘을 반대로 서술("더 적은 달러로 환산해 ... 높아진다" — 실제론 같은 원화가 더 많은 달러로 환산됨). 정답 유일성은 유지되나 학습 자료로서 하자. 검증 기준 4 누수 사례
 - 관찰: 324·328 모두 "기준금리 인상" 발 소재(결과 축 상이) — 당일 크로스 카테고리 소재 겹침 패턴 지속
 - 정답률: 7/19 확정 67% — 80%대(7/17~18)에서 밴드(55~75%) 재진입. 난이도 역조정 불필요 판단
+
+## 운영 이력 (7/20) — 네이버 뉴스 검색 API 이관
+- 종료 공지 대응: 구 Search API(openapi.naver.com/v1/search/news, 2027-06-30 종료 예정) → NAVER API Hub(naverapihub.apigw.ntruss.com/search/v1/news)
+- 변경 범위 = NaverNewsClient URL 1줄 + 인증 헤더 2줄(X-Naver-Client-Id/Secret → X-NCP-APIGW-API-KEY-ID/X-NCP-APIGW-API-KEY). .env 변수명 유지, 값만 API Hub 발급분으로 교체
+- dry-run(query=금리, HTTP 200/items 3) 확인 후 컷오버 (`bbd1222`). 뉴스 검색이 퀴즈 파이프라인 입력이므로 익일 아침 정상 발행으로 최종 검증
