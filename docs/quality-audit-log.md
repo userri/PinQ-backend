@@ -118,7 +118,7 @@
 
 ## 운영 사고 (7/21 오전) — 이관 첫 발행 실패 0/5, 2중 원인, 10:31 복구
 - **사고 1 — 조용한 구버전 롤백**: 06시 생성이 401 (구 에러 포맷). 라이브 컨테이너가 이관 이전 이미지(f9294ba)로 판명 — 전날 dry-run 때 `set -a`로 source 한 셸에 구 `APP_IMAGE_TAG`가 export 돼 있었고, CI 배포 후 그 셸에서 수동 `docker compose up -d app-blue` 실행 시 .env(최신)보다 셸 환경변수(구값)가 우선해 신버전을 구버전으로 덮음. `./deploy.sh <최신SHA>`로 복구. **재발 방지 수칙: 앱 컨테이너는 수동 compose up 금지, 항상 deploy.sh 경유**
-- **사고 2 — API Hub Content-Type 차이**: 신 코드 배포 후에도 실패 — API Hub 는 JSON 본문을 `Content-Type: text/plain`으로 반환해 RestClient 타입 변환이 UnknownContentTypeException. **dry-run 맹점: curl 은 Content-Type 을 검사하지 않아 200 이면 통과처럼 보였음** → 실검증은 앱 경로로 해야 한다는 교훈. String 수신 후 Jackson 직접 파싱으로 수정 (`0c0feaf` 계열 fix 커밋)
+- **사고 2 — API Hub Content-Type 차이**: 신 코드 배포 후에도 실패 — API Hub 는 JSON 본문을 `Content-Type: text/plain`으로 반환해 RestClient 타입 변환이 UnknownContentTypeException. **dry-run 맹점: curl 은 Content-Type 을 검사하지 않아 200 이면 통과처럼 보였음** → 실검증은 앱 경로로 해야 한다는 교훈. String 수신 후 Jackson 직접 파싱으로 수정 (`12298e0`)
 - 10:30 관리자 엔드포인트 수동 트리거로 **5/5 생성** — 이관 실전 검증 최종 통과. 발행이 평시(06시) 대비 4시간 반 지연되어 아침 사용자는 전일 문제를 봤을 것
 - 병행 조치(7/20 저녁): 843MB VM 스왑 압박 완화(`de733c3`) — performance_schema OFF + JVM -Xmx320m. 스왑 826→~500MB, MySQL 쿼리 최악 2146→1061ms. "아침 첫 사용 느림"은 06시 생성 배치의 스왑 밀어내기가 원인으로 확인, 현 규모에선 수용
 
