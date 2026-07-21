@@ -31,7 +31,7 @@ public record AnswerResponse(
         String categoryDisplayName,
         LocalDateTime publishedAt
     ) {
-        static ArticleResponse from(NewsArticle a) {
+        public static ArticleResponse from(NewsArticle a) {
             if (a == null) return null;
             return new ArticleResponse(
                 a.getId(),

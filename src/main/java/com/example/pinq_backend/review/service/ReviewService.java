@@ -12,6 +12,7 @@ import com.example.pinq_backend.review.repository.ReviewItemRepository;
 import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ public class ReviewService {
     public TodayReviewsResponse getTodayReviews(Long userId) {
         LocalDate today = LocalDate.now(clock);
         List<ReviewItem> dueItems =
-                reviewItemRepository.findAllByUserIdAndDueDateLessThanEqualOrderByDueDateAsc(userId, today);
+                reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(userId, today);
 
         List<ReviewQuizResponse> reviews = new ArrayList<>();
         if (!dueItems.isEmpty()) {
@@ -96,7 +97,7 @@ public class ReviewService {
         }
 
         LocalDate nextDueDate = reviewItemRepository
-                .findFirstByUserIdAndDueDateAfterOrderByDueDateAsc(userId, today)
+                .findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(userId, today)
                 .map(ReviewItem::getDueDate)
                 .orElse(null);
 
@@ -106,7 +107,7 @@ public class ReviewService {
     /**
      * 복습 채점 + 주기 갱신.
      *
-     *  - 정답: 다음 단계로 (마지막 단계였다면 졸업 — 항목 삭제)
+     *  - 정답: 다음 단계로 (마지막 단계였다면 졸업 — graduated_at 기록, row 보존)
      *  - 오답: stage 0, 오늘 + 3일로 리셋
      *
      * due 이전의 조기 복습도 허용한다 (클라이언트는 due 항목만 노출하지만,
@@ -119,6 +120,11 @@ public class ReviewService {
     public ReviewAnswerResponse answerReview(Long userId, Long quizId, Long selectedChoiceId) {
         ReviewItem item = reviewItemRepository.findByUserIdAndQuizId(userId, quizId)
                 .orElseThrow(() -> new QuizNotFoundException(quizId));
+
+        if (item.isGraduated()) {
+            // 졸업한 나무는 영구 성취 — 어떤 경로로도 다시 복습되지 않는다 (404)
+            throw new QuizNotFoundException(quizId);
+        }
 
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseGet(() -> {
@@ -144,20 +150,26 @@ public class ReviewService {
         // 트랜잭션과 자기 교착이 된다 (QuizService.checkAnswer 의 동일 사고 참조).
         reviewDailyLogRecorder.record(userId, today, correct);
 
+        item.water(correct); // 물 주기 — 시도 사실을 카운터에 누적 (자기 row 갱신, 락 축 무관)
+
         boolean graduated = false;
+        Integer totalGraduatedTrees = null;
         if (correct) {
             graduated = item.advanceOrGraduate(today);
             if (graduated) {
-                reviewItemRepository.delete(item);
-                // 졸업 성과는 review_item 삭제 후에도 남아야 하므로 카운터에 적립한다.
+                // 졸업 — row 는 나무 목록의 원천으로 보존하고 시각만 기록한다.
+                item.graduate(LocalDateTime.now(clock));
+                // 과거 졸업분(삭제된 row)을 포함한 총계는 카운터가 유일한 진실.
                 // 원자적 UPDATE — 여러 기기에서 동시 졸업해도 카운트가 유실되지 않는다.
                 userRepository.incrementGraduatedReviewCount(userId);
+                totalGraduatedTrees = userRepository.findGraduatedReviewCount(userId);
             }
         } else {
             item.reset(today);
         }
 
         return ReviewAnswerResponse.of(
-                quiz, correct, graduated, graduated ? null : item.getDueDate());
+                quiz, correct, item, graduated,
+                graduated ? null : item.getDueDate(), totalGraduatedTrees);
     }
 }

@@ -99,12 +99,12 @@ class ReviewServiceTest {
     @DisplayName("오늘 복습: due 항목을 퀴즈와 함께 반환하고, 다음 예정일도 알려준다")
     void todayReviews_returnsDueWithNextDate() {
         ReviewItem due = ReviewItem.enqueue(user, 1L, TODAY.minusDays(3)); // due=TODAY
-        when(reviewItemRepository.findAllByUserIdAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
+        when(reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
                 .thenReturn(List.of(due));
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
                 .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "복습 문제")));
         ReviewItem upcoming = ReviewItem.enqueue(user, 2L, TODAY); // due=TODAY+3
-        when(reviewItemRepository.findFirstByUserIdAndDueDateAfterOrderByDueDateAsc(USER_ID, TODAY))
+        when(reviewItemRepository.findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(USER_ID, TODAY))
                 .thenReturn(Optional.of(upcoming));
 
         TodayReviewsResponse response = service.getTodayReviews(USER_ID);
@@ -119,7 +119,7 @@ class ReviewServiceTest {
     @DisplayName("오늘 복습: 퀴즈가 삭제된 고아 항목은 목록에서 빼고 정리한다")
     void todayReviews_cleansOrphans() {
         ReviewItem orphan = ReviewItem.enqueue(user, 99L, TODAY.minusDays(3));
-        when(reviewItemRepository.findAllByUserIdAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
+        when(reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
                 .thenReturn(List.of(orphan));
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(99L)))
                 .thenReturn(List.of()); // 퀴즈 없음
@@ -152,7 +152,7 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("복습 정답(마지막 단계): 졸업 — 항목이 삭제되고 nextDueDate 는 null")
+    @DisplayName("복습 정답(마지막 단계): 졸업 — row 는 보존(graduatedAt 기록)되고 나무 총계를 돌려준다")
     void answer_correctAtMaxStage_graduates() {
         ReviewItem item = ReviewItem.enqueue(user, 1L, TODAY.minusDays(30));
         item.advanceOrGraduate(TODAY.minusDays(25)); // stage 1
@@ -160,14 +160,46 @@ class ReviewServiceTest {
         when(reviewItemRepository.findByUserIdAndQuizId(USER_ID, 1L)).thenReturn(Optional.of(item));
         when(quizRepository.findById(1L))
                 .thenReturn(Optional.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "복습 문제")));
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(4);
 
         ReviewAnswerResponse response = service.answerReview(USER_ID, 1L, 2L);
 
         assertThat(response.graduated()).isTrue();
         assertThat(response.nextDueDate()).isNull();
-        verify(reviewItemRepository).delete(item);
-        // 졸업 성과는 행 삭제 후에도 카운터에 남는다 — "나무 한 그루"
+        assertThat(response.totalGraduatedTrees()).isEqualTo(4);
+        assertThat(item.isGraduated()).isTrue();
+        verify(reviewItemRepository, never()).delete(any());
+        // 졸업 성과는 카운터에도 적립된다 — "나무 한 그루"
         verify(userRepository).incrementGraduatedReviewCount(USER_ID);
+    }
+
+    @Test
+    @DisplayName("복습 채점: 시도마다 물 카운터가 오르고(정답이면 흡수도), 응답에 기사가 실린다")
+    void answer_watersItem() {
+        ReviewItem item = ReviewItem.enqueue(user, 1L, TODAY.minusDays(3));
+        when(reviewItemRepository.findByUserIdAndQuizId(USER_ID, 1L)).thenReturn(Optional.of(item));
+        when(quizRepository.findById(1L))
+                .thenReturn(Optional.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "복습 문제")));
+
+        ReviewAnswerResponse response = service.answerReview(USER_ID, 1L, 2L); // 정답
+
+        assertThat(item.getWaterCount()).isEqualTo(1);
+        assertThat(item.getAbsorbedCount()).isEqualTo(1);
+        assertThat(response.waterCount()).isEqualTo(1);
+        assertThat(response.absorbedCount()).isEqualTo(1);
+        assertThat(response.totalGraduatedTrees()).isNull(); // 비졸업이면 총계 없음
+        assertThat(response.article()).isNotNull(); // 일반 채점 화면과 동일하게 기사 노출
+    }
+
+    @Test
+    @DisplayName("복습 채점: 이미 졸업한 항목은 404 — 다시 복습할 수 없다")
+    void answer_graduatedItem_notFound() {
+        ReviewItem item = ReviewItem.enqueue(user, 1L, TODAY.minusDays(30));
+        item.graduate(TODAY.minusDays(1).atStartOfDay());
+        when(reviewItemRepository.findByUserIdAndQuizId(USER_ID, 1L)).thenReturn(Optional.of(item));
+
+        assertThatThrownBy(() -> service.answerReview(USER_ID, 1L, 2L))
+                .isInstanceOf(QuizNotFoundException.class);
     }
 
     @Test

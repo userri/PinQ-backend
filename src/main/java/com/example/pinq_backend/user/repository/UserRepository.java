@@ -41,4 +41,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE User u SET u.graduatedReviewCount = u.graduatedReviewCount + 1 WHERE u.id = :userId")
     void incrementGraduatedReviewCount(@Param("userId") Long userId);
+
+    /** 졸업 나무 총계 — increment 직후에도 DB 최신값을 읽도록 스칼라 쿼리 사용. */
+    @Query("SELECT u.graduatedReviewCount FROM User u WHERE u.id = :userId")
+    int findGraduatedReviewCount(@Param("userId") Long userId);
 }
