@@ -115,3 +115,15 @@
 - 종료 공지 대응: 구 Search API(openapi.naver.com/v1/search/news, 2027-06-30 종료 예정) → NAVER API Hub(naverapihub.apigw.ntruss.com/search/v1/news)
 - 변경 범위 = NaverNewsClient URL 1줄 + 인증 헤더 2줄(X-Naver-Client-Id/Secret → X-NCP-APIGW-API-KEY-ID/X-NCP-APIGW-API-KEY). .env 변수명 유지, 값만 API Hub 발급분으로 교체
 - dry-run(query=금리, HTTP 200/items 3) 확인 후 컷오버 (`bbd1222`). 뉴스 검색이 퀴즈 파이프라인 입력이므로 익일 아침 정상 발행으로 최종 검증
+
+## 운영 사고 (7/21 오전) — 이관 첫 발행 실패 0/5, 2중 원인, 10:31 복구
+- **사고 1 — 조용한 구버전 롤백**: 06시 생성이 401 (구 에러 포맷). 라이브 컨테이너가 이관 이전 이미지(f9294ba)로 판명 — 전날 dry-run 때 `set -a`로 source 한 셸에 구 `APP_IMAGE_TAG`가 export 돼 있었고, CI 배포 후 그 셸에서 수동 `docker compose up -d app-blue` 실행 시 .env(최신)보다 셸 환경변수(구값)가 우선해 신버전을 구버전으로 덮음. `./deploy.sh <최신SHA>`로 복구. **재발 방지 수칙: 앱 컨테이너는 수동 compose up 금지, 항상 deploy.sh 경유**
+- **사고 2 — API Hub Content-Type 차이**: 신 코드 배포 후에도 실패 — API Hub 는 JSON 본문을 `Content-Type: text/plain`으로 반환해 RestClient 타입 변환이 UnknownContentTypeException. **dry-run 맹점: curl 은 Content-Type 을 검사하지 않아 200 이면 통과처럼 보였음** → 실검증은 앱 경로로 해야 한다는 교훈. String 수신 후 Jackson 직접 파싱으로 수정 (`0c0feaf` 계열 fix 커밋)
+- 10:30 관리자 엔드포인트 수동 트리거로 **5/5 생성** — 이관 실전 검증 최종 통과. 발행이 평시(06시) 대비 4시간 반 지연되어 아침 사용자는 전일 문제를 봤을 것
+- 병행 조치(7/20 저녁): 843MB VM 스왑 압박 완화(`de733c3`) — performance_schema OFF + JVM -Xmx320m. 스왑 826→~500MB, MySQL 쿼리 최악 2146→1061ms. "아침 첫 사용 느림"은 06시 생성 배치의 스왑 밀어내기가 원인으로 확인, 현 규모에선 수용
+
+## 2026-07-21 — 발행분 (id 329~333, 10:31 수동 트리거 5/5) : 치명 0 / 경계 1 / 5 ✅ (8일 연속 치명 0)
+- 330(환율 하락→수입업체 달러 매집, 전제 제공형), 333(디스인플레이션 정의 제공 + 통화정책 주의점) 정합·접근성 우수
+- 331(왝더독) 정의 매칭형 — 오답들이 각자 참인 용어 정의지만 명칭을 묻는 질문 정합상 유일 정답. 무해
+- 경계: 329 오답 4 "완전히 떠나 안전자산으로 급격히 이동" — 방향은 통상적 해석(금리 인상→예금 이동, 해설도 일부 인정)이나 극단어로 거짓화한 패턴. 정답("매수 투입일 수 있다")이 유일 최선은 유지
+- 관찰: 레버리지 ETF 소재 **3회째 재등장** (7/15 302 현물 왜곡 → 7/19 321 음의 복리 → 7/21 331 왝더독). 각도는 매번 다르나 같은 상품군 편중 — 다음 재등장 시 이력 주입 포맷 개선 실험 착수
