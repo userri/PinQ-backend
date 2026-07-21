@@ -3,6 +3,7 @@ package com.example.pinq_backend.news.client;
 import com.example.pinq_backend.config.properties.NaverNewsProperties;
 import com.example.pinq_backend.news.dto.NaverNewsItem;
 import com.example.pinq_backend.news.dto.NaverNewsResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.util.Collections;
 import java.util.List;
@@ -27,12 +28,14 @@ public class NaverNewsClient {
     private static final String BASE_URL = "https://naverapihub.apigw.ntruss.com/search/v1/news";
 
     private final RestClient restClient;
+    private final ObjectMapper objectMapper;
 
-    public NaverNewsClient(NaverNewsProperties props) {
+    public NaverNewsClient(NaverNewsProperties props, ObjectMapper objectMapper) {
         this.restClient = RestClient.builder()
             .defaultHeader("X-NCP-APIGW-API-KEY-ID", props.clientId())
             .defaultHeader("X-NCP-APIGW-API-KEY", props.clientSecret())
             .build();
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -52,10 +55,18 @@ public class NaverNewsClient {
                 .encode()
                 .toUri();
 
-            NaverNewsResponse response = restClient.get()
+            // API Hub 는 JSON 본문을 Content-Type: text/plain 으로 반환한다.
+            // 타입 지정 변환(body(NaverNewsResponse.class))은 컨버터 매칭에 실패하므로
+            // (2026-07-21 실사고: UnknownContentTypeException 으로 발행 0건)
+            // 문자열로 받아 Jackson 으로 직접 파싱한다.
+            String raw = restClient.get()
                 .uri(uri)
                 .retrieve()
-                .body(NaverNewsResponse.class);
+                .body(String.class);
+            if (raw == null || raw.isBlank()) {
+                return Collections.emptyList();
+            }
+            NaverNewsResponse response = objectMapper.readValue(raw, NaverNewsResponse.class);
 
             if (response == null || response.items() == null) {
                 return Collections.emptyList();
