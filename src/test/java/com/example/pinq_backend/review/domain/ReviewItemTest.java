@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.pinq_backend.user.domain.User;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -60,5 +61,31 @@ class ReviewItemTest {
 
         assertThat(item.getStage()).isZero();
         assertThat(item.getDueDate()).isEqualTo(failedOn.plusDays(3));
+    }
+
+    @Test
+    @DisplayName("물 주기: 시도마다 waterCount 가 오르고, 정답이면 absorbedCount 도 오른다")
+    void water_countsAttemptsAndAbsorbs() {
+        ReviewItem item = ReviewItem.enqueue(user, 1L, DAY0);
+
+        item.water(true);
+        item.water(false);
+        item.water(true);
+
+        assertThat(item.getWaterCount()).isEqualTo(3);
+        assertThat(item.getAbsorbedCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("졸업: graduate 는 graduatedAt 을 기록하고 isGraduated 가 true 가 된다")
+    void graduate_marksGraduatedAt() {
+        ReviewItem item = ReviewItem.enqueue(user, 1L, DAY0);
+        LocalDateTime now = DAY0.atStartOfDay();
+
+        assertThat(item.isGraduated()).isFalse();
+        item.graduate(now);
+
+        assertThat(item.isGraduated()).isTrue();
+        assertThat(item.getGraduatedAt()).isEqualTo(now);
     }
 }

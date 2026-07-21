@@ -14,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,8 +25,9 @@ import lombok.NoArgsConstructor;
  * 생명주기:
  *  - 사용자가 퀴즈를 틀리면 stage 0, due = 오답일 + 3일로 등록된다.
  *  - 복습에서 맞히면 stage 가 오르고 다음 주기가 길어진다: 3일 → 7일 → 14일.
- *  - 마지막 단계(stage 2)에서 맞히면 '졸업' — row 를 삭제한다.
- *    (오답 이력 원본은 user_quiz_attempt 에 남아 있으므로 정보 손실 없음)
+ *  - 마지막 단계(stage 2)에서 맞히면 '졸업' — row 는 남기고 graduated_at 을 기록한다.
+ *    졸업한 항목은 due 조회에서 제외되며, 재오답해도 복습 큐에 재진입하지 않는다
+ *    (다 키운 나무는 시들지 않는다 — 영구 성취). 이 row 가 "나무 목록"의 원천이다.
  *  - 복습에서 또 틀리면 stage 0, due = 오늘 + 3일로 리셋된다.
  *
  * 설계 노트:
@@ -73,6 +75,18 @@ public class ReviewItem extends BaseTimeEntity {
     @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
 
+    /** 이 항목에 물을 준 총 횟수 (복습 시도 수). 정답/오답 무관하게 오른다. */
+    @Column(name = "water_count", nullable = false)
+    private int waterCount;
+
+    /** 흡수된 물 — 복습에서 맞힌 횟수. */
+    @Column(name = "absorbed_count", nullable = false)
+    private int absorbedCount;
+
+    /** 졸업 시각. null 이면 아직 자라는 중. 졸업 후에는 복습 대상에서 영구 제외. */
+    @Column(name = "graduated_at")
+    private LocalDateTime graduatedAt;
+
     /** 오답 발생 → 첫 복습 예약. */
     public static ReviewItem enqueue(User user, Long quizId, LocalDate wrongAnsweredOn) {
         ReviewItem item = new ReviewItem();
@@ -83,10 +97,27 @@ public class ReviewItem extends BaseTimeEntity {
         return item;
     }
 
+    /** 복습 시도 1회 기록 — "물 주기". 채점 결과와 무관하게 항상 호출한다. */
+    public void water(boolean correct) {
+        waterCount += 1;
+        if (correct) {
+            absorbedCount += 1;
+        }
+    }
+
+    /** 졸업 처리 — row 를 남긴 채 시각만 기록한다 (나무 목록의 원천). */
+    public void graduate(LocalDateTime now) {
+        graduatedAt = now;
+    }
+
+    public boolean isGraduated() {
+        return graduatedAt != null;
+    }
+
     /**
      * 복습 정답 처리.
      *
-     * @return true 면 졸업(호출자가 row 를 삭제해야 함), false 면 다음 단계로 진행됨
+     * @return true 면 졸업(호출자가 graduate() 를 호출해야 함), false 면 다음 단계로 진행됨
      */
     public boolean advanceOrGraduate(LocalDate reviewedOn) {
         if (stage >= MAX_STAGE) {

@@ -109,4 +109,12 @@ else
   echo "SKIP: trial_quiz.model 이미 존재"
 fi
 
+# 복습 나무 가시화(물 카운터 + 졸업 보존) — ADD COLUMN 이라 존재 가드 필요
+if [ "$(col_exists review_item water_count)" = "0" ]; then
+  run_sql scripts/migration/2026-07-21-review-tree-visibility.sql
+  echo "OK: review-tree-visibility 마이그레이션 적용"
+else
+  echo "SKIP: review_item.water_count 이미 존재"
+fi
+
 echo "✅ 서버 준비 완료"
