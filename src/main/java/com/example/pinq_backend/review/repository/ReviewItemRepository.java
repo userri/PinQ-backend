@@ -17,4 +17,7 @@ public interface ReviewItemRepository extends JpaRepository<ReviewItem, Long> {
     /** 다음 예정 복습일 계산용 — 아직 due 가 안 된 것 중 가장 이른 것. 졸업 제외. */
     Optional<ReviewItem> findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(
             Long userId, LocalDate date);
+
+    /** 정원 조회용 — 자라는 항목 + 졸업한 나무 전부. */
+    List<ReviewItem> findAllByUserId(Long userId);
 }

@@ -14,6 +14,7 @@ import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.domain.ReviewItem;
+import com.example.pinq_backend.review.dto.GardenResponse;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
 import com.example.pinq_backend.review.dto.TodayReviewsResponse;
 import com.example.pinq_backend.review.repository.ReviewItemRepository;
@@ -130,6 +131,44 @@ class ReviewServiceTest {
 
         assertThat(response.reviews()).isEmpty();
         verify(reviewItemRepository).delete(orphan);
+    }
+
+    // ── getGarden ────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("정원: 자라는 항목은 due 오름차순, 나무는 졸업 최신순으로 나눠 반환한다")
+    void garden_splitsGrowingAndGraduated() {
+        ReviewItem growing = ReviewItem.enqueue(user, 1L, TODAY.minusDays(1)); // due=TODAY+2
+        ReviewItem tree = ReviewItem.enqueue(user, 2L, TODAY.minusDays(30));
+        tree.water(true);
+        tree.graduate(TODAY.minusDays(1).atStartOfDay());
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(growing, tree));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L, 2L))).thenReturn(List.of(
+                QuizFixtures.sampleQuiz(1L, Category.STOCK, "자라는 문제"),
+                QuizFixtures.sampleQuiz(2L, Category.STOCK, "나무 문제")));
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(3);
+
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.growing()).hasSize(1);
+        assertThat(response.growing().get(0).quizId()).isEqualTo(1L);
+        assertThat(response.graduated()).hasSize(1);
+        assertThat(response.graduated().get(0).waterCount()).isEqualTo(1);
+        assertThat(response.graduatedTrees()).isEqualTo(3); // 카운터 값 — 목록 길이와 다를 수 있음
+    }
+
+    @Test
+    @DisplayName("정원: 퀴즈가 삭제된 고아 항목은 목록에서 제외한다 (정리는 today 경로가 담당)")
+    void garden_skipsOrphans() {
+        ReviewItem orphan = ReviewItem.enqueue(user, 9L, TODAY);
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(orphan));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(9L))).thenReturn(List.of());
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
+
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.growing()).isEmpty();
+        assertThat(response.graduated()).isEmpty();
     }
 
     // ── answerReview ─────────────────────────────────────────────────────────

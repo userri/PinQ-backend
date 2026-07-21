@@ -2,6 +2,7 @@ package com.example.pinq_backend.review.controller;
 
 import com.example.pinq_backend.auth.SecurityUtils;
 import com.example.pinq_backend.quiz.dto.AnswerRequest;
+import com.example.pinq_backend.review.dto.GardenResponse;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
 import com.example.pinq_backend.review.dto.TodayReviewsResponse;
 import com.example.pinq_backend.review.service.ReviewService;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 오답 복습("잔디에 물 주기") API.
  *
  *  GET  /api/reviews/today           : 오늘 복습 대상 목록 + 다음 예정일
+ *  GET  /api/reviews/garden          : 정원 — 자라는 항목 + 졸업한 나무 목록
  *  POST /api/reviews/{quizId}/answer : 복습 채점 (정답 → 주기 연장/졸업, 오답 → 리셋)
  */
 @RestController
@@ -33,6 +35,12 @@ public class ReviewController {
     public TodayReviewsResponse getTodayReviews() {
         Long userId = SecurityUtils.getCurrentUserId(userService);
         return reviewService.getTodayReviews(userId);
+    }
+
+    @GetMapping("/garden")
+    public GardenResponse getGarden() {
+        Long userId = SecurityUtils.getCurrentUserId(userService);
+        return reviewService.getGarden(userId);
     }
 
     @PostMapping("/{quizId}/answer")

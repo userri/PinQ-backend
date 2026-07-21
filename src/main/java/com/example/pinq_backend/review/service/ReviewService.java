@@ -5,6 +5,7 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.domain.ReviewItem;
+import com.example.pinq_backend.review.dto.GardenResponse;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
 import com.example.pinq_backend.review.dto.ReviewQuizResponse;
 import com.example.pinq_backend.review.dto.TodayReviewsResponse;
@@ -14,6 +15,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -102,6 +104,32 @@ public class ReviewService {
                 .orElse(null);
 
         return new TodayReviewsResponse(reviews, nextDueDate);
+    }
+
+    /**
+     * 정원 조회 — 자라는 항목과 졸업한 나무 전체.
+     * 고아 항목(퀴즈 삭제됨)은 목록에서 제외만 한다 — 삭제 정리는 getTodayReviews 경로 담당.
+     */
+    @Transactional(readOnly = true)
+    public GardenResponse getGarden(Long userId) {
+        List<ReviewItem> items = reviewItemRepository.findAllByUserId(userId);
+
+        Map<Long, Quiz> quizById = items.isEmpty() ? Map.of() : quizRepository
+                .findAllWithChoicesAndArticleByIdIn(items.stream().map(ReviewItem::getQuizId).toList())
+                .stream()
+                .collect(Collectors.toMap(Quiz::getId, Function.identity()));
+
+        List<GardenResponse.GardenItem> growing = new ArrayList<>();
+        List<GardenResponse.GardenItem> graduated = new ArrayList<>();
+        for (ReviewItem item : items) {
+            Quiz quiz = quizById.get(item.getQuizId());
+            if (quiz == null) continue;
+            (item.isGraduated() ? graduated : growing).add(GardenResponse.GardenItem.of(item, quiz));
+        }
+        growing.sort(Comparator.comparing(GardenResponse.GardenItem::dueDate));
+        graduated.sort(Comparator.comparing(GardenResponse.GardenItem::graduatedAt).reversed());
+
+        return new GardenResponse(growing, graduated, userRepository.findGraduatedReviewCount(userId));
     }
 
     /**
