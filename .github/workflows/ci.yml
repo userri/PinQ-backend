@@ -3,6 +3,11 @@ name: CI/CD
 on:
   push:
     branches: [main, develop]
+    # 문서만 바뀐 push 는 빌드·배포를 돌리지 않는다 (audit 로그·README 커밋이 잦음).
+    # 주의: 코드+문서 혼합 커밋은 정상 실행됨 — "전부" 무시 목록일 때만 스킵.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
 
 jobs:
