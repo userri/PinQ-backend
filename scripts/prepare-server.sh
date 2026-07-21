@@ -39,6 +39,11 @@ run_sql() {
   docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" < "$1"
 }
 
+# 단일 값(스칼라) 조회 헬퍼 — COUNT 등 데이터 가드용
+query_scalar() {
+  docker exec "$MYSQL_CONTAINER" mysql -N -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" -e "$1" 2>/dev/null
+}
+
 if [ "$(col_exists quiz category)" = "0" ]; then
   run_sql scripts/migration/2026-07-07-add-quiz-category.sql
   echo "OK: quiz-category 마이그레이션 적용"
@@ -115,6 +120,19 @@ if [ "$(col_exists review_item water_count)" = "0" ]; then
   echo "OK: review-tree-visibility 마이그레이션 적용"
 else
   echo "SKIP: review_item.water_count 이미 존재"
+fi
+
+# 복습 물 카운터 과거분 최소값 백필 — stage 기반 최소값 채움.
+# SQL 자체가 멱등(WHERE water_count=0)이나, 매 배포 불필요 UPDATE 를 피하려
+# 백필 대상 행 수 > 0 일 때만 실행하는 데이터 가드를 둔다.
+if [ "$(col_exists review_item water_count)" = "1" ]; then
+  BACKFILL_ROWS=$(query_scalar "SELECT COUNT(*) FROM review_item WHERE graduated_at IS NULL AND stage > 0 AND water_count = 0")
+  if [ "${BACKFILL_ROWS:-0}" -gt 0 ]; then
+    run_sql scripts/migration/2026-07-21-review-water-backfill.sql
+    echo "OK: review-water-backfill 마이그레이션 적용 (대상 $BACKFILL_ROWS 행)"
+  else
+    echo "SKIP: 물 카운터 백필 대상 없음"
+  fi
 fi
 
 echo "✅ 서버 준비 완료"
