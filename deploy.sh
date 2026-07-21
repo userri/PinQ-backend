@@ -154,6 +154,28 @@ echo "✓ nginx reload 완료 (무중단 전환)"
 echo "▶ pinq-app-${LIVE} 종료..."
 docker compose stop app-${LIVE}
 
+# ── 워밍업 (콜드스타트 액땜) ──────────────────────────────────────────────
+# 옛 슬롯 종료 '후'(2-JVM 메모리 피크가 끝난 시점 — 843MB VM 스왑 안전)에 라이브
+# 컨테이너의 핫 경로를 미리 호출한다. 실사용자 도착 전에 JIT 컴파일 / Hibernate
+# 쿼리플랜 / HikariCP 커넥션 / 스왑에서 밀려난 페이지 복귀를 끝내 첫 요청 지연을 없앤다.
+# 컨테이너 내장 curl(헬스체크가 쓰는 것) 재사용 — 포트 발행·외부 이미지·TLS 불필요.
+# best-effort: 워밍업 실패가 이미 성공한 무중단 배포를 되돌리면 안 되므로 전부 || true.
+echo "▶ 워밍업 (콜드스타트 액땜)..."
+WARM_SECRET=""
+if [ -f .env ]; then
+  WARM_SECRET=$(grep -E '^ADMIN_SECRET=' .env | head -1 | cut -d= -f2- | tr -d '\r\n ')
+fi
+for i in 1 2 3; do
+  # /actuator/health: 데이터소스 헬스 인디케이터가 커넥션을 데운다
+  docker exec pinq-app-${NEXT} curl -fsS -o /dev/null http://localhost:8080/actuator/health 2>/dev/null || true
+  # /api/admin/quizzes/stats: 시큐리티→컨트롤러→서비스→JPA→DB 전 스택 워밍 (JIT 핵심)
+  if [ -n "$WARM_SECRET" ]; then
+    docker exec -e WARM_SECRET="$WARM_SECRET" pinq-app-${NEXT} \
+      sh -c 'curl -fsS -o /dev/null -H "X-Admin-Secret: $WARM_SECRET" http://localhost:8080/api/admin/quizzes/stats' 2>/dev/null || true
+  fi
+done
+echo "✓ 워밍업 완료 (health$([ -n "$WARM_SECRET" ] && echo ' + stats') × 3)"
+
 # ── 배포 태그를 .env 에 기록 ─────────────────────────────────────────────
 # APP_IMAGE_TAG 는 위에서 이 스크립트 실행 중에만 env 로 주입되므로, 기록해두지
 # 않으면 이후 수동 `docker compose up --force-recreate` (예: .env 변경 반영)가
