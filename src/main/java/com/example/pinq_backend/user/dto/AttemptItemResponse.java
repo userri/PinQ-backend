@@ -3,7 +3,9 @@ package com.example.pinq_backend.user.dto;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
+import com.example.pinq_backend.review.domain.ReviewItem;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -17,6 +19,7 @@ import java.util.List;
  *  - 관련 기사
  *  - 북마크 여부
  *  - 첫 풀이 시각
+ *  - 복습 진행 상태(물 준 횟수/나무 여부)
  * 을 한 번에 담아 클라이언트가 화면을 즉시 그릴 수 있게 한다.
  */
 public record AttemptItemResponse(
@@ -32,8 +35,33 @@ public record AttemptItemResponse(
     String keyword,
     ArticleSummary article,
     boolean bookmarked,
-    LocalDateTime solvedAt
+    LocalDateTime solvedAt,
+    ReviewStatus review
 ) {
+
+    /**
+     * 복습("물 주기") 진행 상태 — 복습 큐에 등록된 적 없는 문제면 null.
+     *
+     * @param graduated true 면 다 키운 나무 (더 이상 복습 안 나옴)
+     */
+    public record ReviewStatus(
+        int stage,
+        int waterCount,
+        int absorbedCount,
+        boolean graduated,
+        LocalDate dueDate
+    ) {
+        static ReviewStatus from(ReviewItem item) {
+            if (item == null) return null;
+            return new ReviewStatus(
+                item.getStage(),
+                item.getWaterCount(),
+                item.getAbsorbedCount(),
+                item.isGraduated(),
+                item.getDueDate()
+            );
+        }
+    }
 
     public record ChoiceSummary(Long id, int orderNum, String content) {
         static ChoiceSummary from(Choice c) {
@@ -72,10 +100,20 @@ public record AttemptItemResponse(
      * 안 푼 문제의 정답을 노출하는 치팅 경로가 되는 것을 차단하기 위함.
      * (selectedChoiceId/solvedAt 이 null 인 것으로 클라이언트가 미풀이를 판별)
      */
+    /** 기존 호출부(북마크 등) 호환 — 복습 상태 없이. */
     public static AttemptItemResponse of(
         Quiz quiz,
         UserQuizAttempt attempt,
         boolean bookmarked
+    ) {
+        return of(quiz, attempt, bookmarked, null);
+    }
+
+    public static AttemptItemResponse of(
+        Quiz quiz,
+        UserQuizAttempt attempt,
+        boolean bookmarked,
+        ReviewItem reviewItem
     ) {
         NewsArticle article = quiz.getArticle();
         boolean solved = attempt != null;
@@ -92,7 +130,8 @@ public record AttemptItemResponse(
             solved ? quiz.getKeyword() : null,
             ArticleSummary.from(article),
             bookmarked,
-            solved ? attempt.getCreatedAt() : null
+            solved ? attempt.getCreatedAt() : null,
+            ReviewStatus.from(reviewItem)
         );
     }
 }

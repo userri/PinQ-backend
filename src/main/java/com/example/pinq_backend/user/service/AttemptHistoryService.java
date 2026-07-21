@@ -2,6 +2,8 @@ package com.example.pinq_backend.user.service;
 
 import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.domain.ReviewItem;
+import com.example.pinq_backend.review.repository.ReviewItemRepository;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.dto.AttemptItemResponse;
 import com.example.pinq_backend.user.repository.UserBookmarkRepository;
@@ -31,6 +33,7 @@ public class AttemptHistoryService {
     private final QuizRepository quizRepository;
     private final UserQuizAttemptRepository userQuizAttemptRepository;
     private final UserBookmarkRepository userBookmarkRepository;
+    private final ReviewItemRepository reviewItemRepository;
 
     public List<AttemptItemResponse> getAllAttempts(Long userId) {
         List<UserQuizAttempt> attempts = userQuizAttemptRepository
@@ -57,11 +60,17 @@ public class AttemptHistoryService {
         Set<Long> bookmarkedIds = userBookmarkRepository
             .findBookmarkedQuizIds(userId, quizIds);
 
+        Map<Long, ReviewItem> reviewByQuizId = reviewItemRepository
+            .findAllByUserIdAndQuizIdIn(userId, quizIds)
+            .stream()
+            .collect(Collectors.toMap(ReviewItem::getQuizId, Function.identity()));
+
         return attempts.stream()
             .map(att -> {
                 Quiz q = quizById.get(att.getQuizId());
                 if (q == null) return null;
-                return AttemptItemResponse.of(q, att, bookmarkedIds.contains(q.getId()));
+                return AttemptItemResponse.of(
+                    q, att, bookmarkedIds.contains(q.getId()), reviewByQuizId.get(q.getId()));
             })
             .filter(item -> item != null)
             .toList();

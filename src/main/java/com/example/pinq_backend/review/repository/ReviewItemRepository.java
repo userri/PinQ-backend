@@ -2,6 +2,7 @@ package com.example.pinq_backend.review.repository;
 
 import com.example.pinq_backend.review.domain.ReviewItem;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,4 +21,7 @@ public interface ReviewItemRepository extends JpaRepository<ReviewItem, Long> {
 
     /** 정원 조회용 — 자라는 항목 + 졸업한 나무 전부. */
     List<ReviewItem> findAllByUserId(Long userId);
+
+    /** 오답노트 화면의 복습 상태 join 용 — quizId 묶음 batch 조회. */
+    List<ReviewItem> findAllByUserIdAndQuizIdIn(Long userId, Collection<Long> quizIds);
 }
