@@ -41,6 +41,6 @@
 
 ## 프로세스 (사용자 지정)
 
-- **설계: opus** → **구현: fable** → **검증: fable** (이 세션에서 사용자가 /model 로 전환)
+- **설계: fable** → **구현: opus** → **검증: fable** (이 세션에서 사용자가 /model 로 전환)
 - 배포 순서 준수: push → CI 완료 확인 → (컨테이너 재생성 필요 시) deploy.sh 경유
 - 마이그레이션은 scripts/prepare-server.sh 의 col_exists 멱등 가드 패턴으로
