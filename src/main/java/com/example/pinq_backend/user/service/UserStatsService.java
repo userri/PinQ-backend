@@ -110,6 +110,7 @@ public class UserStatsService {
         return new UserStatsResponse(
             user.getNickname(),
             user.getCurrentStreak(),
+            attemptsByDate.getOrDefault(today, 0) > 0,
             user.getMaxStreak(),
             totalSolved,
             correctRate,

@@ -71,12 +71,13 @@ class UserStatsControllerTest {
         grid.add(3);
 
         given(userStatsService.getStats(anyLong())).willReturn(
-            new UserStatsResponse("테스트유저", 3, 7, 12, 0.75f, grid)
+            new UserStatsResponse("테스트유저", 3, true, 7, 12, 0.75f, grid)
         );
 
         mockMvc.perform(get("/api/users/me/stats"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.streak").value(3))
+            .andExpect(jsonPath("$.solvedToday").value(true))
             .andExpect(jsonPath("$.maxStreak").value(7))
             .andExpect(jsonPath("$.totalSolved").value(12))
             .andExpect(jsonPath("$.correctRate").value(0.75))
