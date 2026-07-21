@@ -112,6 +112,8 @@ class ReviewServiceTest {
         assertThat(response.reviews()).hasSize(1);
         assertThat(response.reviews().get(0).quizId()).isEqualTo(1L);
         assertThat(response.reviews().get(0).question()).isEqualTo("복습 문제");
+        assertThat(response.reviews().get(0).waterCount()).isEqualTo(0);
+        assertThat(response.reviews().get(0).absorbedCount()).isEqualTo(0);
         assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(3));
     }
 
