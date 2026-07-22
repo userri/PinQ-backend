@@ -21,6 +21,9 @@ import java.util.List;
  *  - 첫 풀이 시각
  *  - 복습 진행 상태(물 준 횟수/나무 여부)
  * 을 한 번에 담아 클라이언트가 화면을 즉시 그릴 수 있게 한다.
+ *
+ * @param solved 사용자가 이 문제를 푼 적이 있는지 — 프론트의 "미풀이 북마크" 판별용
+ *               (기존 correctChoiceId==null 방식 대체).
  */
 public record AttemptItemResponse(
     Long quizId,
@@ -31,6 +34,7 @@ public record AttemptItemResponse(
     Long selectedChoiceId,
     Long correctChoiceId,
     boolean correct,
+    boolean solved,
     String explanation,
     String keyword,
     ArticleSummary article,
@@ -126,6 +130,7 @@ public record AttemptItemResponse(
             solved ? attempt.getFirstSelectedChoiceId() : null,
             solved ? quiz.getAnswerChoice().getId() : null,
             solved && attempt.isFirstCorrect(),
+            solved,
             solved ? quiz.getExplanation() : null,
             solved ? quiz.getKeyword() : null,
             ArticleSummary.from(article),

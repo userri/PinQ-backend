@@ -1,6 +1,7 @@
 package com.example.pinq_backend.user.service;
 
 import com.example.pinq_backend.quiz.domain.Quiz;
+import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.domain.ReviewItem;
 import com.example.pinq_backend.review.repository.ReviewItemRepository;
@@ -45,6 +46,26 @@ public class AttemptHistoryService {
         List<UserQuizAttempt> attempts = userQuizAttemptRepository
             .findByUserIdAndFirstCorrectFalseOrderByCreatedAtDesc(userId);
         return toResponse(userId, attempts);
+    }
+
+    /**
+     * 단일 퀴즈의 오답노트/북마크 상세.
+     *
+     * 미풀이(attempt == null)여도 404 가 아니라, AttemptItemResponse.of 의 마스킹 규칙으로
+     * 정답·해설·keyword 를 가린 채 반환한다. 존재하지 않는 quizId 만 QuizNotFoundException.
+     */
+    public AttemptItemResponse getAttemptDetail(Long userId, Long quizId) {
+        Quiz quiz = quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(quizId))
+            .stream().findFirst()
+            .orElseThrow(() -> new QuizNotFoundException(quizId));
+        UserQuizAttempt attempt = userQuizAttemptRepository
+            .findByUserIdAndQuizId(userId, quizId).orElse(null);
+        boolean bookmarked = !userBookmarkRepository
+            .findBookmarkedQuizIds(userId, List.of(quizId)).isEmpty();
+        ReviewItem review = reviewItemRepository
+            .findAllByUserIdAndQuizIdIn(userId, List.of(quizId))
+            .stream().findFirst().orElse(null);
+        return AttemptItemResponse.of(quiz, attempt, bookmarked, review);
     }
 
     private List<AttemptItemResponse> toResponse(Long userId, List<UserQuizAttempt> attempts) {

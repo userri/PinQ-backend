@@ -1,9 +1,11 @@
 package com.example.pinq_backend.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.review.domain.ReviewItem;
@@ -15,6 +17,7 @@ import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,5 +82,58 @@ class AttemptHistoryServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).review()).isNull();
+    }
+
+    @Test
+    @DisplayName("단건 상세: 푼 문제는 전 필드가 채워지고 solved=true 이다")
+    void getAttemptDetail_solved() {
+        UserQuizAttempt attempt = UserQuizAttempt.create(user, 1L, 2L, true);
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+                .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "문제")));
+        when(userQuizAttemptRepository.findByUserIdAndQuizId(USER_ID, 1L))
+                .thenReturn(Optional.of(attempt));
+        when(userBookmarkRepository.findBookmarkedQuizIds(USER_ID, List.of(1L))).thenReturn(Set.of(1L));
+        when(reviewItemRepository.findAllByUserIdAndQuizIdIn(USER_ID, List.of(1L)))
+                .thenReturn(List.of());
+
+        AttemptItemResponse result = service.getAttemptDetail(USER_ID, 1L);
+
+        assertThat(result.quizId()).isEqualTo(1L);
+        assertThat(result.solved()).isTrue();
+        assertThat(result.correctChoiceId()).isNotNull();
+        assertThat(result.explanation()).isNotNull();
+        assertThat(result.keyword()).isNotNull();
+        assertThat(result.bookmarked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("단건 상세: 미풀이 문제는 정답/해설/keyword 가 마스킹되고 solved=false 이다")
+    void getAttemptDetail_notSolved() {
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+                .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "문제")));
+        when(userQuizAttemptRepository.findByUserIdAndQuizId(USER_ID, 1L))
+                .thenReturn(Optional.empty());
+        when(userBookmarkRepository.findBookmarkedQuizIds(USER_ID, List.of(1L))).thenReturn(Set.of(1L));
+        when(reviewItemRepository.findAllByUserIdAndQuizIdIn(USER_ID, List.of(1L)))
+                .thenReturn(List.of());
+
+        AttemptItemResponse result = service.getAttemptDetail(USER_ID, 1L);
+
+        assertThat(result.solved()).isFalse();
+        assertThat(result.correctChoiceId()).isNull();
+        assertThat(result.explanation()).isNull();
+        assertThat(result.keyword()).isNull();
+        assertThat(result.solvedAt()).isNull();
+        assertThat(result.bookmarked()).isTrue();
+    }
+
+    @Test
+    @DisplayName("단건 상세: 존재하지 않는 quizId 는 QuizNotFoundException 을 던진다")
+    void getAttemptDetail_quizNotFound() {
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(999L)))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.getAttemptDetail(USER_ID, 999L))
+                .isInstanceOf(QuizNotFoundException.class);
     }
 }
