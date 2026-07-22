@@ -128,6 +128,34 @@ class QuizServiceTest {
     }
 
     @Test
+    @DisplayName("워밍업은 오늘 퀴즈와 선지를 로드하고 (퀴즈 수, 선지 수) 를 반환한다")
+    void warmupTodayReadPath_loadsTodayQuizzesAndChoices() {
+        Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");
+        Quiz q2 = QuizFixtures.sampleQuiz(2L, Category.EXCHANGE_RATE, "환율 문제");
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of(q1, q2));
+
+        int[] warmed = quizService.warmupTodayReadPath();
+
+        assertThat(warmed[0]).isEqualTo(2);      // 퀴즈 2건
+        assertThat(warmed[1]).isEqualTo(8);      // 선지 4개 × 2
+        // 오늘 발행분이 있으면 어제로 폴백하지 않는다
+        verify(quizRepository, never()).findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1));
+    }
+
+    @Test
+    @DisplayName("워밍업은 오늘 발행 전이면 어제 퀴즈로 폴백해 워밍한다")
+    void warmupTodayReadPath_fallsBackToYesterday() {
+        Quiz y1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "어제 문제");
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY)).willReturn(List.of());
+        given(quizRepository.findAllByQuizDateOrderByIdAsc(TODAY.minusDays(1))).willReturn(List.of(y1));
+
+        int[] warmed = quizService.warmupTodayReadPath();
+
+        assertThat(warmed[0]).isEqualTo(1);
+        assertThat(warmed[1]).isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("이미 푼 퀴즈도 목록에 포함되지만 solved=true 와 correct 가 채워진다")
     void getTodayQuizzes_marksAttemptedQuizzesAsSolved() {
         Quiz q1 = QuizFixtures.sampleQuiz(1L, Category.INTEREST_RATE, "금리 문제");

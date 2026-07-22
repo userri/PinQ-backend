@@ -86,6 +86,31 @@ public class QuizService {
             .toList();
     }
 
+    /**
+     * 스케줄 프리워밍 — 오늘 퀴즈 읽기 경로를 미리 실행해 둔다.
+     *
+     * 843MB VM 에서는 유휴 + 06시 생성 배치의 메모리 스파이크로 앱·MySQL 페이지가
+     * 스왑으로 축출되어, 아침 첫 사용자가 page-fault 복구 비용(수 초)을 문다
+     * (2026-07-22 진단: Up 15h 컨테이너, 스왑 614MB, 배치 06:07 성공=5/5).
+     * 배포 워밍업은 배포 시점 1회뿐이라 이 아침 케이스를 못 막는다.
+     *
+     * 이 메서드는 실제 홈 화면이 때리는 quiz+choice 조회를 그대로 실행해
+     * HikariCP 커넥션 · Hibernate 쿼리플랜 · JIT · 스왑에서 밀려난 핫 페이지를
+     * 사용자 도착 전에 RAM 으로 복귀시킨다. userId 불필요(읽기 전용 워밍).
+     *
+     * @return 워밍한 (퀴즈 수, 선지 수) — 로깅용
+     */
+    public int[] warmupTodayReadPath() {
+        LocalDate today = LocalDate.now(clock);
+        List<Quiz> quizzes = quizRepository.findAllByQuizDateOrderByIdAsc(today);
+        if (quizzes.isEmpty()) {
+            quizzes = quizRepository.findAllByQuizDateOrderByIdAsc(today.minusDays(1));
+        }
+        // 선지는 지연 로딩 — size() 로 강제 초기화해 choice 페이지까지 워밍한다.
+        int choiceCount = quizzes.stream().mapToInt(q -> q.getChoices().size()).sum();
+        return new int[] {quizzes.size(), choiceCount};
+    }
+
     /** Phase 3 표준: 인증된 userId 기반 채점. */
     @Transactional
     public AnswerResponse checkAnswer(Long userId, Long quizId, Long selectedChoiceId) {
