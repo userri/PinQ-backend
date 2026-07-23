@@ -79,5 +79,5 @@ ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" 'cd ~/pinq_backend && set -a && . ./.env
 | 자체 등급 체계 발명 (major/minor) | 치명/경계/관찰 3단계만 |
 | 표 형식으로 로그 기록 | 기존 산문형 항목 형식 준수 |
 | 단발 결함에 즉시 룰 추가 | 반복 확인 → 실험 → 채택 |
-| Claude가 직접 서버 SQL 실행 시도 | SQL을 사용자에게 제시하고 출력을 받는다 |
+| 접속 정보(IP·키 경로)를 스킬/레포에 하드코딩 | `~/.pinq-ops.env`의 `PINQ_SSH_*` 참조 |
 | docs 커밋 후 push 보류 | docs 전용 push는 CI 스킵 — 바로 push |
