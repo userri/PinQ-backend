@@ -13,6 +13,7 @@ import com.example.pinq_backend.review.repository.ReviewItemRepository;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
 import com.example.pinq_backend.user.dto.AttemptItemResponse;
+import com.example.pinq_backend.user.dto.AttemptSummaryResponse;
 import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
 import java.time.LocalDate;
@@ -49,7 +50,8 @@ class AttemptHistoryServiceTest {
         UserQuizAttempt attempt = UserQuizAttempt.create(user, 1L, 3L, false);
         when(userQuizAttemptRepository.findByUserIdAndFirstCorrectFalseOrderByCreatedAtDesc(USER_ID))
                 .thenReturn(List.of(attempt));
-        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+        // 목록은 요약이라 fetch-join 없이 findAllById 로 조회한다
+        when(quizRepository.findAllById(List.of(1L)))
                 .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "문제")));
         when(userBookmarkRepository.findBookmarkedQuizIds(USER_ID, List.of(1L))).thenReturn(Set.of());
         ReviewItem item = ReviewItem.enqueue(user, 1L, LocalDate.of(2026, 7, 20));
@@ -57,7 +59,7 @@ class AttemptHistoryServiceTest {
         when(reviewItemRepository.findAllByUserIdAndQuizIdIn(USER_ID, List.of(1L)))
                 .thenReturn(List.of(item));
 
-        List<AttemptItemResponse> result = service.getWrongAttempts(USER_ID);
+        List<AttemptSummaryResponse> result = service.getWrongAttempts(USER_ID);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).review()).isNotNull();
@@ -72,13 +74,14 @@ class AttemptHistoryServiceTest {
         UserQuizAttempt attempt = UserQuizAttempt.create(user, 2L, 2L, true);
         when(userQuizAttemptRepository.findByUserIdOrderByCreatedAtDesc(USER_ID))
                 .thenReturn(List.of(attempt));
-        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(2L)))
+        // 목록은 요약이라 fetch-join 없이 findAllById 로 조회한다
+        when(quizRepository.findAllById(List.of(2L)))
                 .thenReturn(List.of(QuizFixtures.sampleQuiz(2L, Category.STOCK, "문제")));
         when(userBookmarkRepository.findBookmarkedQuizIds(USER_ID, List.of(2L))).thenReturn(Set.of());
         when(reviewItemRepository.findAllByUserIdAndQuizIdIn(USER_ID, List.of(2L)))
                 .thenReturn(List.of());
 
-        List<AttemptItemResponse> result = service.getAllAttempts(USER_ID);
+        List<AttemptSummaryResponse> result = service.getAllAttempts(USER_ID);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).review()).isNull();

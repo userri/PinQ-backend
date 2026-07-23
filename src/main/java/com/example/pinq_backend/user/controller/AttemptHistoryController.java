@@ -2,6 +2,7 @@ package com.example.pinq_backend.user.controller;
 
 import com.example.pinq_backend.auth.SecurityUtils;
 import com.example.pinq_backend.user.dto.AttemptItemResponse;
+import com.example.pinq_backend.user.dto.AttemptSummaryResponse;
 import com.example.pinq_backend.user.service.AttemptHistoryService;
 import com.example.pinq_backend.user.service.UserService;
 import java.util.List;
@@ -14,11 +15,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 풀이 이력 / 오답노트 REST API.
  *
- *  GET /api/me/attempts          : 내 전체 풀이 이력 (최신순)
+ *  GET /api/me/attempts          : 내 전체 풀이 이력 (최신순, 요약)
  *  GET /api/me/attempts/{quizId} : 특정 문제 단건 상세 (미풀이도 마스킹해 반환)
- *  GET /api/me/wrong-notes       : 내 오답노트 (첫 시도 실패만, 최신순)
+ *  GET /api/me/wrong-notes       : 내 오답노트 (첫 시도 실패만, 최신순, 요약)
  *
- * 모든 응답은 AttemptItemResponse 로 통일 — 클라이언트는 동일한 카드 UI 로 렌더링.
+ * 목록 = AttemptSummaryResponse(접힌 카드용), 상세 = AttemptItemResponse(펼친 카드용).
+ * 경량화 배경은 docs/api/wrong-notes-lightweight-request.md 참조.
  */
 @RestController
 @RequestMapping("/api/me")
@@ -29,7 +31,7 @@ public class AttemptHistoryController {
     private final UserService userService;
 
     @GetMapping("/attempts")
-    public List<AttemptItemResponse> getMyAttempts() {
+    public List<AttemptSummaryResponse> getMyAttempts() {
         Long userId = SecurityUtils.getCurrentUserId(userService);
         return attemptHistoryService.getAllAttempts(userId);
     }
@@ -41,7 +43,7 @@ public class AttemptHistoryController {
     }
 
     @GetMapping("/wrong-notes")
-    public List<AttemptItemResponse> getMyWrongNotes() {
+    public List<AttemptSummaryResponse> getMyWrongNotes() {
         Long userId = SecurityUtils.getCurrentUserId(userService);
         return attemptHistoryService.getWrongAttempts(userId);
     }

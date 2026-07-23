@@ -6,7 +6,7 @@ import com.example.pinq_backend.quiz.repository.QuizRepository;
 import com.example.pinq_backend.user.domain.User;
 import com.example.pinq_backend.user.domain.UserBookmark;
 import com.example.pinq_backend.user.domain.UserQuizAttempt;
-import com.example.pinq_backend.user.dto.AttemptItemResponse;
+import com.example.pinq_backend.user.dto.AttemptSummaryResponse;
 import com.example.pinq_backend.user.dto.BookmarkToggleResponse;
 import com.example.pinq_backend.user.repository.UserBookmarkRepository;
 import com.example.pinq_backend.user.repository.UserQuizAttemptRepository;
@@ -67,16 +67,21 @@ public class BookmarkService {
         return new BookmarkToggleResponse(quizId, false);
     }
 
-    /** 북마크 목록 조회 — 최신 북마크 순으로 정렬. */
-    public List<AttemptItemResponse> getBookmarks(Long userId) {
+    /**
+     * 북마크 목록 조회 — 최신 북마크 순으로 정렬 (요약 응답).
+     * 상세(선지·해설·기사)는 GET /api/me/attempts/{quizId} 로 단건 조회.
+     * 미풀이 북마크는 solved=false — 클라이언트가 "아직 안 푼 문제" 뱃지로 표시.
+     */
+    public List<AttemptSummaryResponse> getBookmarks(Long userId) {
         List<UserBookmark> bookmarks = userBookmarkRepository
             .findByUserIdOrderByCreatedAtDesc(userId);
 
         if (bookmarks.isEmpty()) return List.of();
 
         List<Long> quizIds = bookmarks.stream().map(UserBookmark::getQuizId).toList();
+        // 요약은 quiz 본문만 필요 — choices/article fetch-join 불필요
         Map<Long, Quiz> quizById = quizRepository
-            .findAllWithChoicesAndArticleByIdIn(quizIds)
+            .findAllById(quizIds)
             .stream()
             .collect(Collectors.toMap(Quiz::getId, Function.identity()));
 
@@ -93,7 +98,7 @@ public class BookmarkService {
         return bookmarks.stream()
             .map(bm -> quizById.get(bm.getQuizId()))
             .filter(q -> q != null) // 삭제된 quiz 는 스킵
-            .map(q -> AttemptItemResponse.of(q, attemptByQuizId.get(q.getId()), true))
+            .map(q -> AttemptSummaryResponse.of(q, attemptByQuizId.get(q.getId()), true, null))
             .toList();
     }
 }

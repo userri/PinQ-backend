@@ -1,7 +1,7 @@
 package com.example.pinq_backend.user.controller;
 
 import com.example.pinq_backend.auth.SecurityUtils;
-import com.example.pinq_backend.user.dto.AttemptItemResponse;
+import com.example.pinq_backend.user.dto.AttemptSummaryResponse;
 import com.example.pinq_backend.user.dto.BookmarkToggleResponse;
 import com.example.pinq_backend.user.service.BookmarkService;
 import com.example.pinq_backend.user.service.UserService;
@@ -30,7 +30,7 @@ public class BookmarkController {
     private final UserService userService;
 
     @GetMapping
-    public List<AttemptItemResponse> getMyBookmarks() {
+    public List<AttemptSummaryResponse> getMyBookmarks() {
         Long userId = SecurityUtils.getCurrentUserId(userService);
         return bookmarkService.getBookmarks(userId);
     }
