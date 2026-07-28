@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  *  - getAllAttempts   : 사용자의 전체 풀이 이력을 최신순으로 반환 (요약)
  *  - getWrongAttempts : 사용자의 오답(첫 시도 실패) 이력만 최신순으로 반환 (요약)
- *  - getAttemptDetail : 단건 상세 — 펼친 카드용 전체 필드
+ *  - getAttemptDetail : 단건 상세 — 상세 화면용 전체 필드
  *
  * 목록은 AttemptSummaryResponse(요약), 상세는 AttemptItemResponse(전체).
  * 목록 경량화 배경·배포 순서는 docs/api/wrong-notes-lightweight-request.md 참조 —

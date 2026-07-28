@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  *  GET /api/me/attempts/{quizId} : 특정 문제 단건 상세 (미풀이도 마스킹해 반환)
  *  GET /api/me/wrong-notes       : 내 오답노트 (첫 시도 실패만, 최신순, 요약)
  *
- * 목록 = AttemptSummaryResponse(접힌 카드용), 상세 = AttemptItemResponse(펼친 카드용).
+ * 목록 = AttemptSummaryResponse(목록 행용), 상세 = AttemptItemResponse(상세 화면용).
  * 경량화 배경은 docs/api/wrong-notes-lightweight-request.md 참조.
  */
 @RestController
