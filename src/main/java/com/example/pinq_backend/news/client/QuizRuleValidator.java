@@ -190,13 +190,26 @@ public class QuizRuleValidator {
         Result langResult = checkKoreanOnly(quiz);
         if (!langResult.valid()) return langResult;
 
-        // 5) keyword 형식 검사 — "용어: 정의" 형식이어야 하는데 단어 나열이면 폐기.
-        //    운영 재발 사례(id 289, 318 등): "수리비, 소비자물가지수, 부품가격 상승, ..."
-        //    콜론 없이 콤마 2개 이상이면 정의 없는 나열형으로 판정한다.
+        // 5) keyword 형식 검사 — "용어 하나 : 정의 하나"만 허용한다.
         String keyword = quiz.getKeyword();
-        if (keyword != null && !keyword.contains(":") && !keyword.contains("：")
-                && keyword.chars().filter(ch -> ch == ',').count() >= 2) {
-            return Result.fail("keyword 나열형 (\"용어: 정의\" 형식 위반): " + keyword);
+        if (keyword != null) {
+            long colonCount = keyword.chars().filter(ch -> ch == ':' || ch == '：').count();
+
+            //  5-a) 나열형: 콜론 없이 콤마 2개 이상 — 정의가 아예 없는 단어 나열.
+            //       운영 재발 사례(id 289, 318): "수리비, 소비자물가지수, 부품가격 상승, ..."
+            if (colonCount == 0 && keyword.chars().filter(ch -> ch == ',').count() >= 2) {
+                return Result.fail("keyword 나열형 (\"용어: 정의\" 형식 위반): " + keyword);
+            }
+
+            //  5-b) 용어 2개 병렬: 콜론 2개 이상 — 한 필드에 "용어A: 정의A, 용어B: 정의B".
+            //       keyword 는 그날 문제의 '핵심 용어 하나'를 익히게 하는 자리라
+            //       둘을 병렬로 담으면 초점이 흐려진다.
+            //       운영 재발 3회로 트리거 도달(7/25 id 351 · 7/27 362 · 7/28 368, 소급 확인 시 307 포함 4건).
+            //       채택 근거: 발행분 276건 전수 검사에서 이 조건에 걸린 4건이 **전부 진짜 위반**,
+            //       오탐 0건(1.4%)이라 정상 생성률에 영향이 없음.
+            if (colonCount >= 2) {
+                return Result.fail("keyword 용어 2개 병렬 (핵심 용어는 하나만): " + keyword);
+            }
         }
 
         return Result.ok();

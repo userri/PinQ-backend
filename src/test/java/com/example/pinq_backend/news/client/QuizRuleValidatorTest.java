@@ -187,6 +187,32 @@ class QuizRuleValidatorTest {
         org.assertj.core.api.Assertions.assertThat(validator.validate(q).valid()).isTrue();
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("keyword 에 용어 2개를 병렬로 담으면 폐기한다 (콜론 2개 이상)")
+    void twoTermsInKeyword_isRejected() throws Exception {
+        // 운영 재발 사례 id 368 원문
+        GeneratedQuizDto q = quizWithKeyword(
+                "기준금리: 중앙은행이 금융시장에 영향을 미치기 위해 정책적으로 정하는 금리, "
+                        + "정기예금: 일정 기간 동안 돈을 맡기고 이자를 받는 예금 상품");
+        QuizRuleValidator.Result result = validator.validate(q);
+        org.assertj.core.api.Assertions.assertThat(result.valid()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(result.reason()).contains("용어 2개 병렬");
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("전각 콜론으로 용어 2개를 병렬해도 폐기한다")
+    void twoTermsWithFullWidthColon_isRejected() throws Exception {
+        GeneratedQuizDto q = quizWithKeyword("금리：돈의 값, 환율：통화 교환 비율");
+        org.assertj.core.api.Assertions.assertThat(validator.validate(q).valid()).isFalse();
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("용어 하나에 콜론 하나면 정상 통과한다 (회귀 방지)")
+    void singleTermWithColon_passes() throws Exception {
+        GeneratedQuizDto q = quizWithKeyword("역머니무브: 예금에서 위험자산으로 자금이 이동하는 현상");
+        org.assertj.core.api.Assertions.assertThat(validator.validate(q).valid()).isTrue();
+    }
+
     private GeneratedQuizDto quizWithKeyword(String keyword) throws Exception {
         String json = """
                 {

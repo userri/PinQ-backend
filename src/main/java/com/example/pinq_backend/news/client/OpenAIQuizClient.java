@@ -485,7 +485,7 @@ public class OpenAIQuizClient {
                 {"orderNum": 4, "content": "보기4 (100% 한국어)", "isAnswer": false}
               ],
               "explanation": "정답 해설 (2~3문장, 100% 한국어)",
-              "keyword": "핵심 경제 용어: 한 줄 개념 설명 (100% 한국어. KOSPI·GDP·ETF 같은 정착 영문 약어만 예외)"
+              "keyword": "핵심 경제 용어 하나: 한 줄 개념 설명 (용어는 반드시 1개 — 콜론도 1개. 두 용어를 콤마로 병렬하지 말 것. 100% 한국어, KOSPI·GDP·ETF 같은 정착 영문 약어만 예외)"
             }
             """;
     }
