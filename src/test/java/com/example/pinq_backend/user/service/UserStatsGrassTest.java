@@ -38,7 +38,6 @@ class UserStatsGrassTest {
     @Mock private UserService userService;
     @Mock private UserQuizAttemptRepository userQuizAttemptRepository;
     @Mock private ReviewDailyLogRepository reviewDailyLogRepository;
-    @Mock private com.example.pinq_backend.quiz.repository.QuizRepository quizRepository;
 
     private UserStatsService service;
     private User user;
@@ -47,7 +46,7 @@ class UserStatsGrassTest {
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(KST).toInstant(), KST);
         service = new UserStatsService(
-                userService, userQuizAttemptRepository, reviewDailyLogRepository, quizRepository, clock);
+                userService, userQuizAttemptRepository, reviewDailyLogRepository, clock);
 
         user = User.builder().nickname("tester").build();
         user.syncStreak(3, 15, TODAY);
@@ -57,12 +56,12 @@ class UserStatsGrassTest {
     }
 
     @Test
-    @DisplayName("활동일만 sparse 로 반환하고, 레벨 사다리(1~2문제/3문제/완주/만점)를 적용한다")
+    @DisplayName("활동일만 sparse 로 반환하고, 맞힌 개수로 레벨 사다리(1/2/3/4정답)를 적용한다")
     void grass_levelsAndSparse() {
-        LocalDate d1 = TODAY.minusDays(4); // 1문제 → level 1
-        LocalDate d2 = TODAY.minusDays(3); // 3문제 → level 2
-        LocalDate d3 = TODAY.minusDays(2); // 4문제 완주, 3정답 → level 3
-        LocalDate d4 = TODAY.minusDays(1); // 4문제 완주, 4정답 → level 4 (만점 잔디)
+        LocalDate d1 = TODAY.minusDays(4); // 1문제 풀고 0정답 → level 1
+        LocalDate d2 = TODAY.minusDays(3); // 2정답 → level 2
+        LocalDate d3 = TODAY.minusDays(2); // 3정답 → level 3
+        LocalDate d4 = TODAY.minusDays(1); // 4정답 → level 4 (라임)
 
         when(userQuizAttemptRepository.countAttemptsByDateBetween(eq(USER_ID), any(), any()))
                 .thenReturn(List.<Object[]>of(
@@ -94,41 +93,28 @@ class UserStatsGrassTest {
     }
 
     @Test
-    @DisplayName("결손일(3문제 발행)엔 3문제 전부 정답이면 만점, 백필로 5문제가 돼도 4문제 만점은 유지된다")
-    void grass_targetIsMinOfCapAndPublished() {
-        LocalDate shortDay = TODAY.minusDays(2);   // 3문제만 발행된 날 — 3/3 정답
-        LocalDate backfillDay = TODAY.minusDays(1); // 백필로 5문제 발행 — 4/4 정답
+    @DisplayName("라임(4)은 맞힌 개수 4 이상이면 성립한다 — 발행 수·완주 여부·틀린 문항 섞임과 무관")
+    void grass_limeDependsOnlyOnCorrectCount() {
+        LocalDate mixedDay = TODAY.minusDays(2);  // 6문제 풀고 4정답(2오답 섞임) → 라임
+        LocalDate pastDay = TODAY.minusDays(1);   // 밀린 과거 문제 포함 4정답 → 라임
 
         when(userQuizAttemptRepository.countAttemptsByDateBetween(eq(USER_ID), any(), any()))
                 .thenReturn(List.<Object[]>of(
-                        new Object[]{shortDay, 3L},
-                        new Object[]{backfillDay, 4L}
+                        new Object[]{mixedDay, 6L},
+                        new Object[]{pastDay, 4L}
                 ));
         when(userQuizAttemptRepository.countFirstCorrectByDateBetween(eq(USER_ID), any(), any()))
                 .thenReturn(List.<Object[]>of(
-                        new Object[]{shortDay, 3L},
-                        new Object[]{backfillDay, 4L}
-                ));
-        when(quizRepository.countPublishedByDateBetween(any(), any()))
-                .thenReturn(List.of(
-                        publishedRow(shortDay, 3L),
-                        publishedRow(backfillDay, 5L)
+                        new Object[]{mixedDay, 4L},
+                        new Object[]{pastDay, 4L}
                 ));
 
         GrassResponse grass = service.getGrass(USER_ID);
 
-        // 3발행일: min(4,3)=3 → 3/3 만점 / 5발행일: min(4,5)=4 → 4/4 만점 (소급 강등 없음)
+        // 종전 규칙(완주 + 전부 정답)이었다면 mixedDay 는 오답이 섞여 3 이었다.
         assertThat(grass.days()).extracting(GrassResponse.GrassDay::level)
                 .containsExactly(4, 4);
         assertThat(grass.perfectDays()).isEqualTo(2);
-    }
-
-    private com.example.pinq_backend.quiz.repository.QuizRepository.PublishedCountRow publishedRow(
-            LocalDate date, Long cnt) {
-        return new com.example.pinq_backend.quiz.repository.QuizRepository.PublishedCountRow() {
-            @Override public LocalDate getQuizDate() { return date; }
-            @Override public Long getCnt() { return cnt; }
-        };
     }
 
     @Test
