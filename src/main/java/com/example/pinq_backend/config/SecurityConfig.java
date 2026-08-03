@@ -41,6 +41,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 로그인/토큰 재발급 — 인증 불필요
                         .requestMatchers("/api/auth/**").permitAll()
+                        // 버전 게이트·공지 — 로그인 화면에 닿기 전에 구버전을 막아야 하므로 공개.
+                        // 사용자 데이터를 담지 않아 노출 위험이 없다.
+                        .requestMatchers("/api/app/config").permitAll()
                         // Play Console 제출용 공개 페이지 (개인정보처리방침, 계정 삭제 안내)
                         .requestMatchers("/privacy.html", "/account-deletion.html").permitAll()
                         // 개발/문서 도구 — swagger 문서는 prod 프로파일에서

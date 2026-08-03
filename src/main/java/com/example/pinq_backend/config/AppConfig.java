@@ -1,6 +1,7 @@
 package com.example.pinq_backend.config;
 
 import com.example.pinq_backend.config.properties.AnthropicProperties;
+import com.example.pinq_backend.config.properties.AppVersionProperties;
 import com.example.pinq_backend.config.properties.FirebaseProperties;
 import com.example.pinq_backend.config.properties.NaverNewsProperties;
 import com.example.pinq_backend.config.properties.OpenAIProperties;
@@ -25,7 +26,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @Configuration
 @EnableScheduling
 @EnableConfigurationProperties({NaverNewsProperties.class, OpenAIProperties.class,
-        AnthropicProperties.class, FirebaseProperties.class})
+        AnthropicProperties.class, FirebaseProperties.class, AppVersionProperties.class})
 public class AppConfig {
 
     public static final ZoneId KST = ZoneId.of("Asia/Seoul");

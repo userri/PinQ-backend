@@ -132,9 +132,13 @@ public class ReviewService {
     /**
      * 정원 조회 — 자라는 항목과 졸업한 나무 전체.
      * 고아 항목(퀴즈 삭제됨)은 목록에서 제외만 한다 — 삭제 정리는 getTodayReviews 경로 담당.
+     *
+     * todayQueueSize 는 캡을 적용한 "오늘 물 줄 개수"다. 프론트가 growing 목록의
+     * dueDate 를 직접 세면 캡 이전 숫자(밀린 전체)가 나오므로 이 값만 쓴다.
      */
     @Transactional(readOnly = true)
     public GardenResponse getGarden(Long userId) {
+        LocalDate today = LocalDate.now(clock);
         List<ReviewItem> items = reviewItemRepository.findAllByUserId(userId);
 
         Map<Long, Quiz> quizById = items.isEmpty() ? Map.of() : quizRepository
@@ -155,8 +159,7 @@ public class ReviewService {
         // 배지 숫자는 서버가 유일한 원천 — 클라가 growing 의 dueDate 로 세면
         // 캡에 잘린 백로그까지 "오늘 할 일"로 보이게 된다.
         int todayQueueSize = (int) Math.min(DAILY_QUEUE_CAP,
-                reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(
-                        userId, LocalDate.now(clock)));
+                reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(userId, today));
 
         return new GardenResponse(
                 growing, graduated, userRepository.findGraduatedReviewCount(userId), todayQueueSize);
