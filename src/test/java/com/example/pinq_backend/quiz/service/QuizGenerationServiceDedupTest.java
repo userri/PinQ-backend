@@ -160,12 +160,12 @@ class QuizGenerationServiceDedupTest {
         verify(quizRepository, times(1)).save(savedQuiz.capture());
         assertThat(savedQuiz.getValue().getQuestion()).isEqualTo(first);
 
-        // EXCHANGE_RATE 생성 프롬프트에도 오늘 생성분이 이력으로 전달된다
+        // EXCHANGE_RATE 생성 프롬프트에도 오늘 생성분이 [용어] 축과 함께 이력으로 전달된다
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<String>> historyCaptor = ArgumentCaptor.forClass(List.class);
         verify(openAIQuizClient).generateQuiz(
                 eq("기사C"), anyString(), eq(Category.EXCHANGE_RATE), historyCaptor.capture());
-        assertThat(historyCaptor.getValue()).contains(first);
+        assertThat(historyCaptor.getValue()).anyMatch(line -> line.endsWith(first));
     }
 
     // ── dry-run (trialGenerate) ──────────────────────────────────────────────
@@ -216,6 +216,90 @@ class QuizGenerationServiceDedupTest {
 
     private NaverNewsItem newsItem(String title, String url) {
         return new NaverNewsItem(title, url, url, "요약", "Tue, 07 Jul 2026 06:00:00 +0900");
+    }
+
+    @Test
+    @DisplayName("7일 내 동일 keyword 용어(비본원)는 문장이 달라도 폐기하고 다음 기사를 쓴다")
+    void recentSameTerm_isDiscarded() throws Exception {
+        // 3일 전 같은 카테고리에서 "가계대출 총량 규제" 소재로 출제된 이력 (총량 규제 3연속 실측 재현)
+        Quiz past = QuizFixtures.sampleQuiz(
+                1L, Category.REAL_ESTATE,
+                "가계대출 총량 규제가 강화되면 잔금대출 실수요자에게 어떤 영향이 있는가?",
+                TODAY.minusDays(3),
+                "가계대출 총량 규제: 금융당국이 은행별 대출 총량을 제한하는 정책");
+        when(quizRepository.findAllByQuizDateGreaterThanEqual(any())).thenReturn(List.of(past));
+
+        when(naverNewsClient.search(eq("부동산"), anyInt())).thenReturn(List.of(
+                newsItem("기사A", "https://news.example.com/a"),
+                newsItem("기사B", "https://news.example.com/b")
+        ));
+
+        // 기사A → 같은 용어·다른 문장 (렉시컬로는 못 잡는 케이스), 기사B → 새 소재
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.REAL_ESTATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "은행별 대출 한도를 정부가 관리하면 청약 당첨자의 자금 계획은 어떻게 되는가?",
+                        "가계대출 총량 규제: 금융당국이 은행별 대출 총량을 제한하는 정책")));
+        when(openAIQuizClient.generateQuiz(eq("기사B"), anyString(), eq(Category.REAL_ESTATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "전세가율이 높아지면 갭투자 수요는 왜 늘어나는가?",
+                        "전세가율: 매매가 대비 전세가 비율")));
+
+        int generated = service.generateTodayQuizzes();
+        assertThat(generated).isEqualTo(1);
+
+        // 같은 용어 후보는 버려지고 새 소재만 저장된다
+        ArgumentCaptor<Quiz> savedQuiz = ArgumentCaptor.forClass(Quiz.class);
+        verify(quizRepository, times(1)).save(savedQuiz.capture());
+        assertThat(savedQuiz.getValue().getKeyword()).startsWith("전세가율");
+
+        // 프롬프트 이력 라인에는 소재 축 [용어] 가 앞에 붙는다
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> historyCaptor = ArgumentCaptor.forClass(List.class);
+        verify(openAIQuizClient, times(2)).generateQuiz(
+                anyString(), anyString(), eq(Category.REAL_ESTATE), historyCaptor.capture());
+        assertThat(historyCaptor.getAllValues().get(0))
+                .anyMatch(line -> line.startsWith("[가계대출 총량 규제] "));
+    }
+
+    @Test
+    @DisplayName("본원 용어(기준금리 등)는 7일 내 재사용해도 가드가 차단하지 않는다")
+    void genericTerm_isExemptFromGuard() throws Exception {
+        Quiz past = QuizFixtures.sampleQuiz(
+                1L, Category.INTEREST_RATE,
+                "기준금리가 인상되면 예금 금리는 왜 오르는가?",
+                TODAY.minusDays(2),
+                "기준금리: 중앙은행이 정하는 정책 금리");
+        when(quizRepository.findAllByQuizDateGreaterThanEqual(any())).thenReturn(List.of(past));
+
+        when(naverNewsClient.search(eq("기준금리"), anyInt())).thenReturn(List.of(
+                newsItem("기사A", "https://news.example.com/a")
+        ));
+        // 같은 본원 용어지만 다른 개념의 문항 — 정상 통과해야 한다
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "기준금리와 콜금리의 차이는 무엇인가?",
+                        "기준금리: 중앙은행이 정하는 정책 금리")));
+
+        int generated = service.generateTodayQuizzes();
+        assertThat(generated).isEqualTo(1);
+        verify(quizRepository, times(1)).save(any(Quiz.class));
+    }
+
+    private GeneratedQuizDto quizDto(String question, String keyword) throws Exception {
+        return objectMapper.readValue("""
+                {
+                  "skip": false,
+                  "question": "%s",
+                  "choices": [
+                    {"orderNum": 1, "content": "보기1", "isAnswer": false},
+                    {"orderNum": 2, "content": "보기2", "isAnswer": true},
+                    {"orderNum": 3, "content": "보기3", "isAnswer": false},
+                    {"orderNum": 4, "content": "보기4", "isAnswer": false}
+                  ],
+                  "explanation": "정답 해설입니다.",
+                  "keyword": "%s"
+                }
+                """.formatted(question, keyword), GeneratedQuizDto.class);
     }
 
     private GeneratedQuizDto quizDto(String question) throws Exception {

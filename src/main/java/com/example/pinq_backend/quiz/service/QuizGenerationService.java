@@ -87,6 +87,25 @@ public class QuizGenerationService {
      */
     private static final int DEDUP_HISTORY_DAYS = 60;
 
+    /**
+     * 저장 전 keyword 용어(콜론 앞 소재) 재사용 차단 기간 (일) — 같은 카테고리 한정.
+     *
+     * 근거(2026-08-03 코퍼스 검증): "가계대출 총량 규제"가 7/30·7/31·8/2 사흘새 3회 출제 —
+     * 질문 문장만 나열하는 30일 이력 주입으로는 문장이 다른 같은 소재를 못 막았다.
+     * 렉시컬 검사도 문장 단위라 동일하게 통과시켰다. 용어 축의 결정적 차단이 필요하다.
+     * 7일로 잡으면 본원 용어(아래 예외)를 제외한 오탐이 코퍼스 전체에서 0건.
+     */
+    private static final int TERM_GUARD_DAYS = 7;
+
+    /**
+     * 용어 가드 예외 — 카테고리 본원(뼈대) 용어.
+     * "환율"·"기준금리"류는 그 카테고리 문항 다수의 keyword 로 반복될 수밖에 없고,
+     * 실제 코퍼스에서 14일 내 4~5회 재사용됐지만 검수상 소재 중복이 아니었다.
+     * 이런 용어의 재사용은 정상이므로 차단하지 않는다.
+     */
+    private static final Set<String> TERM_GUARD_EXEMPT = Set.of(
+            "금리", "기준금리", "환율", "주식", "증시", "부동산", "물가", "인플레이션");
+
     private static final DateTimeFormatter PUB_DATE_FORMATTER =
             DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH);
 
@@ -268,7 +287,18 @@ public class QuizGenerationService {
                     continue;
                 }
 
-                // 저장 전 최종 방어선: 최근 이력과의 렉시컬 유사도 검사.
+                // 저장 전 방어선 1: 최근 동일 소재(keyword 용어) 재출제 차단.
+                // 질문 나열 주입·렉시컬 검사는 문장 단위라 "문장이 다른 같은 소재"
+                // (총량 규제 3연속 사례)를 못 막는다 — 용어 축으로 결정적으로 자른다.
+                String term = extractKeywordTerm(dto.getKeyword());
+                if (term != null && !TERM_GUARD_EXEMPT.contains(term)
+                        && history.isRecentTerm(category, term)) {
+                    log.info("최근 {}일 내 동일 keyword 용어 재출제로 폐기. category={}, term={}, question={}",
+                            TERM_GUARD_DAYS, category, term, dto.getQuestion());
+                    continue;
+                }
+
+                // 저장 전 방어선 2: 최근 이력과의 렉시컬 유사도 검사.
                 // 프롬프트의 "중복 금지" 지시를 모델이 무시해도 여기서 걸러진다.
                 Optional<QuizSimilarityChecker.Match> similar =
                         similarityChecker.findMostSimilar(dto.getQuestion(), history.lexicalPool());
@@ -319,8 +349,9 @@ public class QuizGenerationService {
                 usedUrls.add(url);
 
                 // 생성된 문항을 이력에 등록 — 이번 사이클의 다음 카테고리부터
-                // 프롬프트 주입·렉시컬 검사 양쪽에 반영된다.
-                history.register(dto.getQuestion());
+                // 프롬프트 주입·렉시컬 검사·용어 가드 모두에 반영된다.
+                history.register(dto.getQuestion(),
+                        promptHistoryLine(term, dto.getQuestion()), category, term);
 
                 log.info("퀴즈 생성 성공. category={}, keyword={}, title={}", category, keyword, title);
                 return true;
@@ -462,7 +493,8 @@ public class QuizGenerationService {
     private record DedupHistory(
             Map<Category, List<String>> promptQuestionsByCategory,
             List<String> lexicalPool,
-            List<String> generatedToday
+            List<String> generatedToday,
+            Map<Category, Set<String>> recentTermsByCategory
     ) {
         /** 해당 카테고리의 프롬프트 주입용 문항 목록 (최근 이력 + 오늘 생성분). */
         List<String> promptQuestionsFor(Category category) {
@@ -472,10 +504,22 @@ public class QuizGenerationService {
             return merged;
         }
 
-        /** 새로 생성된 문항을 이력에 등록. */
-        void register(String question) {
+        /**
+         * 새로 생성된 문항을 이력에 등록.
+         * 렉시컬 풀에는 원문 질문(유사도 계산 오염 방지), 프롬프트에는 [용어] 라인,
+         * 용어 가드에는 keyword 용어를 넣는다.
+         */
+        void register(String question, String promptLine, Category category, String term) {
             lexicalPool.add(question);
-            generatedToday.add(question);
+            generatedToday.add(promptLine);
+            if (term != null) {
+                recentTermsByCategory.computeIfAbsent(category, c -> new HashSet<>()).add(term);
+            }
+        }
+
+        /** 같은 카테고리에서 최근 TERM_GUARD_DAYS 내(오늘 생성분 포함) 등장한 용어인가. */
+        boolean isRecentTerm(Category category, String term) {
+            return recentTermsByCategory.getOrDefault(category, Set.of()).contains(term);
         }
     }
 
@@ -496,17 +540,44 @@ public class QuizGenerationService {
 
         Map<Category, List<String>> byCategory = new EnumMap<>(Category.class);
         List<String> lexicalPool = new ArrayList<>();
+        Map<Category, Set<String>> recentTerms = new EnumMap<>(Category.class);
+        LocalDate termFrom = today.minusDays(TERM_GUARD_DAYS);
         for (Quiz quiz : recentQuizzes) {
             lexicalPool.add(quiz.getQuestion());
+            String term = extractKeywordTerm(quiz.getKeyword());
             if (!quiz.getQuizDate().isBefore(promptFrom)) {
+                // 프롬프트 이력에 소재 축([용어])을 명시 — 질문 문장만 나열하면 모델이
+                // "문장이 다른 같은 소재"를 못 알아본다 (총량 규제 3연속 실측).
                 byCategory.computeIfAbsent(quiz.getCategory(), c -> new ArrayList<>())
-                        .add(quiz.getQuestion());
+                        .add(promptHistoryLine(term, quiz.getQuestion()));
+            }
+            if (term != null && !quiz.getQuizDate().isBefore(termFrom)) {
+                recentTerms.computeIfAbsent(quiz.getCategory(), c -> new HashSet<>()).add(term);
             }
         }
-        log.info("중복 방지 이력 로드. 렉시컬 풀={}건, 프롬프트 주입 대상={}건",
+        log.info("중복 방지 이력 로드. 렉시컬 풀={}건, 프롬프트 주입 대상={}건, 용어 가드={}건",
                 lexicalPool.size(),
-                byCategory.values().stream().mapToInt(List::size).sum());
-        return new DedupHistory(byCategory, lexicalPool, new ArrayList<>());
+                byCategory.values().stream().mapToInt(List::size).sum(),
+                recentTerms.values().stream().mapToInt(Set::size).sum());
+        return new DedupHistory(byCategory, lexicalPool, new ArrayList<>(), recentTerms);
+    }
+
+    /** keyword("용어: 정의")에서 소재 용어(콜론 앞)를 뽑는다. 콜론이 없으면 null. */
+    static String extractKeywordTerm(String keyword) {
+        if (keyword == null || keyword.isBlank()) return null;
+        for (int i = 0; i < keyword.length(); i++) {
+            char ch = keyword.charAt(i);
+            if (ch == ':' || ch == '：') {
+                String term = keyword.substring(0, i).trim();
+                return term.isEmpty() ? null : term;
+            }
+        }
+        return null;
+    }
+
+    /** 프롬프트 이력 한 줄 — 소재 축을 [용어]로 앞에 붙인다. 용어가 없으면 질문만. */
+    private static String promptHistoryLine(String term, String question) {
+        return term != null ? "[" + term + "] " + question : question;
     }
 
     /** OpenAI 응답이 퀴즈 도메인 규칙을 충족하는지 검증. */

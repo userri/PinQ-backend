@@ -23,6 +23,20 @@ public final class QuizFixtures {
         return sampleQuiz(quizId, category, question, /* correctOrderNum */ 2);
     }
 
+    /** quizDate + keyword 지정 퀴즈 (용어 가드 테스트용 — keyword 는 "용어: 정의" 형식으로 전달). */
+    public static Quiz sampleQuiz(
+            Long quizId, Category category, String question, LocalDate quizDate, String keyword) {
+        Quiz quiz = sampleQuiz(quizId, category, question, quizDate);
+        try {
+            Field f = Quiz.class.getDeclaredField("keyword");
+            f.setAccessible(true);
+            f.set(quiz, keyword);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        return quiz;
+    }
+
     /** quizDate 가 있는 퀴즈 (생성 이력 조회 테스트용). */
     public static Quiz sampleQuiz(Long quizId, Category category, String question, LocalDate quizDate) {
         NewsArticle article = sampleArticle(1000L + quizId, category);
