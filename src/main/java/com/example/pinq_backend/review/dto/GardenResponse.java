@@ -14,11 +14,15 @@ import java.util.List;
  * @param graduatedTrees 나무 총계 — users 카운터 값. 이 기능 배포 이전에 졸업한
  *                       나무는 row 가 없어 graduated 목록에는 없지만 총계에는 포함된다.
  *                       (목록 길이 ≠ 총계일 수 있음 — 프론트는 총계를 신뢰할 것)
+ * @param todayQueueSize "오늘 물 줄 잔디 N개" 배지의 유일한 원천 — min(하루 캡, due 개수).
+ *                       growing 의 dueDate 로 클라가 직접 세면 캡에 잘린 백로그까지
+ *                       오늘 할 일로 보이므로 반드시 이 값을 쓸 것.
  */
 public record GardenResponse(
     List<GardenItem> growing,
     List<GardenItem> graduated,
-    int graduatedTrees
+    int graduatedTrees,
+    int todayQueueSize
 ) {
     /**
      * @param stage         현재 단계 (0~2). 졸업 항목은 마지막 단계 값 그대로

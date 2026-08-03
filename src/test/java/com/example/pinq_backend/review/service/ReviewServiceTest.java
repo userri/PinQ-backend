@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.quiz.domain.Quiz;
 import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
@@ -23,17 +25,20 @@ import com.example.pinq_backend.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -100,8 +105,7 @@ class ReviewServiceTest {
     @DisplayName("오늘 복습: due 항목을 퀴즈와 함께 반환하고, 다음 예정일도 알려준다")
     void todayReviews_returnsDueWithNextDate() {
         ReviewItem due = ReviewItem.enqueue(user, 1L, TODAY.minusDays(3)); // due=TODAY
-        when(reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
-                .thenReturn(List.of(due));
+        stubDueQueue(List.of(due), 1L);
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
                 .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "복습 문제")));
         ReviewItem upcoming = ReviewItem.enqueue(user, 2L, TODAY); // due=TODAY+3
@@ -119,11 +123,46 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("오늘 복습: 하루 큐를 5개 상한으로 조회한다")
+    void todayReviews_capsQueueAtFive() {
+        stubDueQueue(List.of(), 0L);
+
+        service.getTodayReviews(USER_ID);
+
+        ArgumentCaptor<Limit> limit = ArgumentCaptor.forClass(Limit.class);
+        verify(reviewItemRepository)
+                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                        eq(USER_ID), eq(TODAY), limit.capture());
+        assertThat(limit.getValue().max()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("오늘 복습: 캡에 잘린 백로그가 남아 있으면 다음 물주기는 내일이다")
+    void todayReviews_truncated_nextDueIsTomorrow() {
+        List<ReviewItem> capped = new ArrayList<>();
+        List<Quiz> quizzes = new ArrayList<>();
+        for (long quizId = 1; quizId <= 5; quizId++) {
+            capped.add(ReviewItem.enqueue(user, quizId, TODAY.minusDays(3)));
+            quizzes.add(QuizFixtures.sampleQuiz(quizId, Category.STOCK, "복습 문제 " + quizId));
+        }
+        stubDueQueue(capped, 55L); // due 55개 중 5개만 선발됨
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L, 2L, 3L, 4L, 5L)))
+                .thenReturn(quizzes);
+
+        TodayReviewsResponse response = service.getTodayReviews(USER_ID);
+
+        assertThat(response.reviews()).hasSize(5);
+        assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(1));
+        // 잘렸으면 미래 예정일 조회는 필요 없다
+        verify(reviewItemRepository, never())
+                .findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(anyLong(), any());
+    }
+
+    @Test
     @DisplayName("오늘 복습: 퀴즈가 삭제된 고아 항목은 목록에서 빼고 정리한다")
     void todayReviews_cleansOrphans() {
         ReviewItem orphan = ReviewItem.enqueue(user, 99L, TODAY.minusDays(3));
-        when(reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(USER_ID, TODAY))
-                .thenReturn(List.of(orphan));
+        stubDueQueue(List.of(orphan), 1L);
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(99L)))
                 .thenReturn(List.of()); // 퀴즈 없음
 
@@ -131,6 +170,16 @@ class ReviewServiceTest {
 
         assertThat(response.reviews()).isEmpty();
         verify(reviewItemRepository).delete(orphan);
+    }
+
+    /** 오늘 큐 선발 결과와 due 총계를 스텁한다. */
+    private void stubDueQueue(List<ReviewItem> selected, long dueTotal) {
+        when(reviewItemRepository
+                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                        eq(USER_ID), eq(TODAY), any(Limit.class)))
+                .thenReturn(selected);
+        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
+                .thenReturn(dueTotal);
     }
 
     // ── getGarden ────────────────────────────────────────────────────────────
@@ -155,6 +204,28 @@ class ReviewServiceTest {
         assertThat(response.graduated()).hasSize(1);
         assertThat(response.graduated().get(0).waterCount()).isEqualTo(1);
         assertThat(response.graduatedTrees()).isEqualTo(3); // 카운터 값 — 목록 길이와 다를 수 있음
+    }
+
+    @Test
+    @DisplayName("정원: 배지 숫자는 min(하루 캡, due 개수) — 백로그가 55개여도 5")
+    void garden_todayQueueSize_cappedAtDailyLimit() {
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of());
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
+        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
+                .thenReturn(55L);
+
+        assertThat(service.getGarden(USER_ID).todayQueueSize()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("정원: due 가 캡보다 적으면 배지는 due 개수 그대로")
+    void garden_todayQueueSize_belowCap() {
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of());
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
+        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
+                .thenReturn(3L);
+
+        assertThat(service.getGarden(USER_ID).todayQueueSize()).isEqualTo(3);
     }
 
     @Test

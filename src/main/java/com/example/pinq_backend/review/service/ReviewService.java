@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
+
+    /**
+     * 하루 복습 큐 상한. 세션이 "완주 가능한 습관" 크기를 넘지 않게 한다 —
+     * 백로그가 아무리 쌓여도 오늘 할 일은 이 개수까지만 보여주고, 나머지는 내일로.
+     * (근거: 무제한 큐에서 due 55개가 쌓여 세션 자체가 돌지 않았던 2026-08 실측.)
+     */
+    static final int DAILY_QUEUE_CAP = 5;
 
     private final ReviewItemRepository reviewItemRepository;
     private final ReviewDailyLogRecorder reviewDailyLogRecorder;
@@ -72,12 +80,23 @@ public class ReviewService {
         }
     }
 
-    /** 오늘 복습 세트 조회. 퀴즈가 삭제된 고아 항목은 이 시점에 정리한다. */
+    /**
+     * 오늘 복습 세트 조회. 퀴즈가 삭제된 고아 항목은 이 시점에 정리한다.
+     *
+     * 밀린 항목이 아무리 쌓여도 하루치는 DAILY_QUEUE_CAP 개로 자른다 — 남은 것은
+     * 사라지지 않고 내일로 넘어간다(간격 반복 규칙 자체는 그대로).
+     *
+     * 캡 선발분에 고아가 섞이면 그날 세트가 캡보다 작아지지만, 퀴즈 재생성 시에만
+     * 생기는 드문 경우이고 다음 날 자연히 보충되므로 오버페치로 메우지 않는다.
+     */
     @Transactional
     public TodayReviewsResponse getTodayReviews(Long userId) {
         LocalDate today = LocalDate.now(clock);
-        List<ReviewItem> dueItems =
-                reviewItemRepository.findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByDueDateAsc(userId, today);
+        List<ReviewItem> dueItems = reviewItemRepository
+                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                        userId, today, Limit.of(DAILY_QUEUE_CAP));
+        long dueTotal = reviewItemRepository
+                .countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(userId, today);
 
         List<ReviewQuizResponse> reviews = new ArrayList<>();
         if (!dueItems.isEmpty()) {
@@ -98,10 +117,14 @@ public class ReviewService {
             }
         }
 
-        LocalDate nextDueDate = reviewItemRepository
-                .findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(userId, today)
-                .map(ReviewItem::getDueDate)
-                .orElse(null);
+        // 캡 때문에 오늘 큐에 못 들어간 due 항목이 남아 있으면 다음 물주기는 "내일"이다.
+        // 잘림 판정은 fetch 시점 개수(dueItems) 기준 — 고아 정리로 reviews 가 줄어든 것과 섞지 않는다.
+        LocalDate nextDueDate = dueTotal > dueItems.size()
+                ? today.plusDays(1)
+                : reviewItemRepository
+                        .findFirstByUserIdAndGraduatedAtIsNullAndDueDateAfterOrderByDueDateAsc(userId, today)
+                        .map(ReviewItem::getDueDate)
+                        .orElse(null);
 
         return new TodayReviewsResponse(reviews, nextDueDate);
     }
@@ -129,7 +152,14 @@ public class ReviewService {
         growing.sort(Comparator.comparing(GardenResponse.GardenItem::dueDate));
         graduated.sort(Comparator.comparing(GardenResponse.GardenItem::graduatedAt).reversed());
 
-        return new GardenResponse(growing, graduated, userRepository.findGraduatedReviewCount(userId));
+        // 배지 숫자는 서버가 유일한 원천 — 클라가 growing 의 dueDate 로 세면
+        // 캡에 잘린 백로그까지 "오늘 할 일"로 보이게 된다.
+        int todayQueueSize = (int) Math.min(DAILY_QUEUE_CAP,
+                reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(
+                        userId, LocalDate.now(clock)));
+
+        return new GardenResponse(
+                growing, graduated, userRepository.findGraduatedReviewCount(userId), todayQueueSize);
     }
 
     /**
