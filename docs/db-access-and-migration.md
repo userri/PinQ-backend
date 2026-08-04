@@ -23,12 +23,12 @@ ssh -i ~/Downloads/pinq-aqure-key.pem ubuntu@20.194.0.153
 ```
 
 ```bash
-cd ~/pinq && set -a && . ./.env && set +a
+cd ~/pinq_backend && set -a && . ./.env && set +a
 docker exec -it mysql-container \
   mysql --default-character-set=utf8mb4 -uroot -p"$DB_PASSWORD" "$DB_NAME"
 ```
 
-`.env` 위치가 다르면 `ls ~` 로 확인한다.
+앱 디렉터리는 **`~/pinq_backend`** 다(`~/pinq` 아님 — 2026-08-04 실측). `.env` 가 여기 있다.
 
 ## 2. 마이그레이션 실행 — 파일로 넣는다
 
@@ -41,7 +41,7 @@ scp -i ~/Downloads/pinq-aqure-key.pem \
   docs/migration/<파일>.sql ubuntu@20.194.0.153:/tmp/m.sql
 
 ssh -i ~/Downloads/pinq-aqure-key.pem ubuntu@20.194.0.153 \
-  'cd ~/pinq && set -a && . ./.env && set +a && \
+  'cd ~/pinq_backend && set -a && . ./.env && set +a && \
    docker exec -i mysql-container mysql -uroot -p"$DB_PASSWORD" "$DB_NAME" < /tmp/m.sql && \
    rm /tmp/m.sql'
 ```
