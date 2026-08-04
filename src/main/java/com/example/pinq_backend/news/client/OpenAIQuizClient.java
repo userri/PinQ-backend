@@ -192,6 +192,19 @@ public class OpenAIQuizClient {
      *
      * @return true면 정답 신뢰 가능, false면 폐기
      */
+    /**
+     * 이미 저장된 퀴즈를 검증기에 그대로 통과시킨다 — 검증 기준 실험의 회귀 테스트용.
+     *
+     * 워크벤치 생성 A/B 는 "결함 후보가 그날 우연히 생성돼야" 룰 효과를 볼 수 있어
+     * 판정 불가로 끝나기 쉽다(실험 #9 선례). 알려진 결함 사례(id 325·334·373·400 등)를
+     * 강화 전/후 기준으로 각각 돌리면 적중·오탐을 결정적으로 잴 수 있다.
+     *
+     * 중복 판정은 목적이 아니므로 이력은 주입하지 않는다.
+     */
+    public boolean verifyStoredQuiz(GeneratedQuizDto quiz, String extraVerifyRules, String verifyModelOverride) {
+        return verifyAnswer(quiz, null, extraVerifyRules, verifyModelOverride);
+    }
+
     private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions, String extraVerifyRules, String verifyModelOverride) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)

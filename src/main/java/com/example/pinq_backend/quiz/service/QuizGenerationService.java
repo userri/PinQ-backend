@@ -378,6 +378,42 @@ public class QuizGenerationService {
      * 주의: 후보 리젝 사유는 응답에 없고 서버 로그로 확인한다
      * (OpenAIQuizClient/QuizRuleValidator 가 이미 사유를 로깅함).
      */
+    /**
+     * 저장된 퀴즈 1건을 검증기에 재투입한다 — 검증 기준 실험의 회귀 테스트.
+     *
+     * 생성 A/B 는 결함 후보의 출현을 기다려야 해서 판정 불가로 끝나기 쉬우므로
+     * (실험 #9 선례), 알려진 결함 사례를 강화 전/후 기준으로 각각 돌려
+     * 적중률과 오탐을 직접 잰다. DB 는 읽기만 하고 아무것도 바꾸지 않는다.
+     *
+     * @param extraVerifyRules 실험용 추가 검증 기준 (null 이면 현행 프로덕션 기준)
+     * @return valid=true 면 검증 통과(= 결함을 못 잡음)
+     */
+    @Transactional(readOnly = true)
+    public boolean verifyStoredQuiz(Long quizId, String extraVerifyRules, String verifyModel) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new com.example.pinq_backend.quiz.exception.QuizNotFoundException(quizId));
+
+        // GeneratedQuizDto 는 Jackson 역직렬화 전용(세터 없음)이라 맵으로 변환한다 —
+        // 실험 편의를 위해 프로덕션 DTO 에 세터를 여는 것보다 안전하다.
+        Map<String, Object> payload = Map.of(
+                "skip", false,
+                "question", nullSafe(quiz.getQuestion()),
+                "explanation", nullSafe(quiz.getExplanation()),
+                "keyword", nullSafe(quiz.getKeyword()),
+                "choices", quiz.getChoices().stream()
+                        .map(c -> Map.of(
+                                "orderNum", c.getOrderNum(),
+                                "content", nullSafe(c.getContent()),
+                                "isAnswer", c.isAnswer()))
+                        .toList());
+        GeneratedQuizDto dto = trialObjectMapper.convertValue(payload, GeneratedQuizDto.class);
+
+        boolean valid = openAIQuizClient.verifyStoredQuiz(dto, extraVerifyRules, verifyModel);
+        log.info("[회귀검증] quizId={}, 실험기준={}, valid={}",
+                quizId, extraVerifyRules == null ? "현행" : "강화", valid);
+        return valid;
+    }
+
     @Transactional
     public com.example.pinq_backend.quiz.dto.TrialQuizResponse trialGenerate(
             Category category, String extraGenRules, String extraVerifyRules, String model,
@@ -560,6 +596,11 @@ public class QuizGenerationService {
                 byCategory.values().stream().mapToInt(List::size).sum(),
                 recentTerms.values().stream().mapToInt(Set::size).sum());
         return new DedupHistory(byCategory, lexicalPool, new ArrayList<>(), recentTerms);
+    }
+
+    /** Map.of 는 null 을 허용하지 않으므로 빈 문자열로 치환한다. */
+    private static String nullSafe(String s) {
+        return s == null ? "" : s;
     }
 
     /** keyword("용어: 정의")에서 소재 용어(콜론 앞)를 뽑는다. 콜론이 없으면 null. */

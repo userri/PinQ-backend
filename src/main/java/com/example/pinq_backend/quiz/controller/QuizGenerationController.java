@@ -65,4 +65,26 @@ public class QuizGenerationController {
         return ResponseEntity.ok(
                 quizGenerationService.trialGenerate(category, gen, verify, model, promptOverride, verifyModel));
     }
+
+    /** @param extraVerifyRules (선택) 실험용 추가 검증 기준. 없으면 현행 프로덕션 기준으로 판정 */
+    public record VerifyStoredRequest(String extraVerifyRules, String verifyModel) {}
+
+    /**
+     * 저장된 퀴즈를 검증기에 재투입한다 — 검증 기준 실험의 회귀 테스트용 (DB 변경 없음).
+     * 알려진 결함 사례를 강화 전/후 기준으로 각각 돌려 적중·오탐을 직접 측정한다.
+     */
+    @PostMapping("/{quizId}/verify")
+    public ResponseEntity<Map<String, Object>> verifyStored(
+        @org.springframework.web.bind.annotation.PathVariable Long quizId,
+        @org.springframework.web.bind.annotation.RequestBody(required = false) VerifyStoredRequest request
+    ) {
+        String rules = request != null ? request.extraVerifyRules() : null;
+        String verifyModel = request != null ? request.verifyModel() : null;
+        boolean valid = quizGenerationService.verifyStoredQuiz(quizId, rules, verifyModel);
+        return ResponseEntity.ok(Map.of(
+            "quizId", quizId,
+            "criteria", rules == null || rules.isBlank() ? "현행" : "강화",
+            "valid", valid
+        ));
+    }
 }
