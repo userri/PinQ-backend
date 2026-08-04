@@ -139,4 +139,25 @@ class AttemptHistoryServiceTest {
         assertThatThrownBy(() -> service.getAttemptDetail(USER_ID, 999L))
                 .isInstanceOf(QuizNotFoundException.class);
     }
+
+    @Test
+    @DisplayName("목록 요약에 keyword 가 실린다 — 행 제목으로 쓰기 위해")
+    void summary_carriesKeyword() {
+        var quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "복습 문제");
+        var summary = AttemptSummaryResponse.of(
+                quiz, UserQuizAttempt.create(user, 1L, 3L, false), false, null);
+
+        assertThat(summary.keyword()).isEqualTo(quiz.getKeyword());
+    }
+
+    @Test
+    @DisplayName("미풀이 항목은 keyword 를 마스킹한다 — 안 푼 문제의 개념 노출 차단")
+    void summary_unsolved_masksKeyword() {
+        var quiz = QuizFixtures.sampleQuiz(1L, Category.STOCK, "미풀이 북마크");
+
+        var summary = AttemptSummaryResponse.of(quiz, null, true, null);
+
+        assertThat(summary.keyword()).isNull();
+        assertThat(summary.solved()).isFalse();
+    }
 }
