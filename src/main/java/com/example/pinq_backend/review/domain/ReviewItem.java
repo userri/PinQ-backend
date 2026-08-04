@@ -28,7 +28,8 @@ import lombok.NoArgsConstructor;
  *  - 마지막 단계(stage 2)에서 맞히면 '졸업' — row 는 남기고 graduated_at 을 기록한다.
  *    졸업한 항목은 due 조회에서 제외되며, 재오답해도 복습 큐에 재진입하지 않는다
  *    (다 키운 나무는 시들지 않는다 — 영구 성취). 이 row 가 "나무 목록"의 원천이다.
- *  - 복습에서 또 틀리면 stage 0, due = 오늘 + 3일로 리셋된다.
+ *  - 복습에서 또 틀리면 <b>stage 는 그대로 두고</b> due 만 오늘 + 3일로 당긴다.
+ *    (진척은 되돌리지 않는다 — 자세한 근거는 {@link #retryLater} 주석)
  *
  * 설계 노트:
  *  - quizId 는 FK 없는 플레인 컬럼 (UserBookmark 와 동일 패턴).
@@ -128,9 +129,18 @@ public class ReviewItem extends BaseTimeEntity {
         return false;
     }
 
-    /** 복습 오답 처리 — 처음부터 다시. */
-    public void reset(LocalDate reviewedOn) {
-        stage = 0;
+    /**
+     * 복습 오답 처리 — <b>진척(stage)은 그대로 두고 다시 만날 날짜만 당긴다.</b>
+     *
+     * 종전에는 stage 를 0 으로 되돌렸다(SM-2 관습). 폐기한 이유:
+     *  - 리셋의 정당한 목적은 "방금 틀린 문제를 14일 뒤에 보지 않는다"는 <b>스케줄링</b>인데,
+     *    그건 dueDate 를 당기는 것만으로 100% 달성된다.
+     *  - stage 는 스케줄링 티어인 동시에 화면의 성장 게이지라, 리셋이 사용자에게는
+     *    "쌓은 진척이 사라졌다"는 <b>보상 박탈</b>로 읽힌다. 벌칙은 하루 한 번 오는
+     *    습관 앱에서 동기가 되지 않고 복습 회피를 만든다.
+     *  - 졸업 조건(3·7·14일 간격으로 세 번 정답, 최소 24일)은 그대로다. 틀리면 3일씩 밀릴 뿐.
+     */
+    public void retryLater(LocalDate reviewedOn) {
         dueDate = reviewedOn.plusDays(INTERVAL_DAYS[0]);
     }
 

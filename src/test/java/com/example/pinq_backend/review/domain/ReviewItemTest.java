@@ -51,16 +51,32 @@ class ReviewItemTest {
     }
 
     @Test
-    @DisplayName("복습 오답 시 처음(3일 주기)부터 다시 시작한다")
-    void reset_restartsFromStageZero() {
+    @DisplayName("복습 오답: 진척(stage)은 유지하고 3일 뒤에 다시 만난다")
+    void retryLater_keepsStageAndPullsDueIn() {
         ReviewItem item = ReviewItem.enqueue(user, 1L, DAY0);
-        item.advanceOrGraduate(DAY0.plusDays(3)); // stage 1
+        item.advanceOrGraduate(DAY0.plusDays(3)); // stage 1, due = +7
 
         LocalDate failedOn = DAY0.plusDays(10);
-        item.reset(failedOn);
+        item.retryLater(failedOn);
 
-        assertThat(item.getStage()).isZero();
+        // 리셋하지 않는다 — 벌칙이 아니라 스케줄 교정이므로 날짜만 당긴다
+        assertThat(item.getStage()).isEqualTo(1);
         assertThat(item.getDueDate()).isEqualTo(failedOn.plusDays(3));
+    }
+
+    @Test
+    @DisplayName("복습 오답을 반복해도 쌓은 단계는 사라지지 않는다")
+    void retryLater_repeatedFailures_neverLoseProgress() {
+        ReviewItem item = ReviewItem.enqueue(user, 1L, DAY0);
+        item.advanceOrGraduate(DAY0.plusDays(3));  // stage 1
+        item.advanceOrGraduate(DAY0.plusDays(10)); // stage 2 — 한 번 더 맞히면 나무
+
+        item.retryLater(DAY0.plusDays(24));
+        item.retryLater(DAY0.plusDays(27));
+
+        assertThat(item.getStage()).isEqualTo(ReviewItem.MAX_STAGE);
+        // 마지막 단계를 유지하므로 다음 정답에 곧바로 졸업한다
+        assertThat(item.advanceOrGraduate(DAY0.plusDays(30))).isTrue();
     }
 
     @Test

@@ -354,8 +354,8 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("복습 오답: 3일 주기부터 다시 시작한다")
-    void answer_wrong_resets() {
+    @DisplayName("복습 오답: 진척은 유지하고 3일 뒤 다시 만난다 (리셋 없음)")
+    void answer_wrong_keepsStage() {
         ReviewItem item = ReviewItem.enqueue(user, 1L, TODAY.minusDays(30));
         item.advanceOrGraduate(TODAY.minusDays(25)); // stage 1
         when(reviewItemRepository.findByUserIdAndQuizId(USER_ID, 1L)).thenReturn(Optional.of(item));
@@ -367,7 +367,9 @@ class ReviewServiceTest {
         assertThat(response.correct()).isFalse();
         assertThat(response.graduated()).isFalse();
         assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(3));
-        assertThat(item.getStage()).isZero();
+        // 진척은 되돌리지 않는다 — 날짜만 당겨 3일 뒤 다시 만난다
+        assertThat(item.getStage()).isEqualTo(1);
+        assertThat(response.stage()).isEqualTo(1);
         verify(userRepository, never()).incrementGraduatedReviewCount(anyLong());
     }
 

@@ -35,7 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 흐름:
  *  1. 일반 채점(QuizService.checkAnswer)에서 오답이면 enqueueWrongAnswer 로 등록
  *  2. GET /api/reviews/today → due 가 된 항목을 퀴즈와 함께 반환
- *  3. POST /api/reviews/{quizId}/answer → 채점 후 주기 갱신 (정답: 다음 단계/졸업, 오답: 리셋)
+ *  3. POST /api/reviews/{quizId}/answer → 채점 후 주기 갱신 (정답: 다음 단계/졸업, 오답: 3일 뒤 재시도)
  *
  * 복습 채점은 첫 시도 통계(스트릭·정답률)에 반영하지 않는다.
  */
@@ -183,7 +183,7 @@ public class ReviewService {
      * 복습 채점 + 주기 갱신.
      *
      *  - 정답: 다음 단계로 (마지막 단계였다면 졸업 — graduated_at 기록, row 보존)
-     *  - 오답: stage 0, 오늘 + 3일로 리셋
+     *  - 오답: stage 유지, due 만 오늘 + 3일 (진척은 되돌리지 않는다)
      *
      * due 이전의 조기 복습도 허용한다 (클라이언트는 due 항목만 노출하지만,
      * 시간대 경계·캐시 문제로 요청이 어긋나도 사용자를 막지 않는다).
@@ -240,7 +240,8 @@ public class ReviewService {
                 totalGraduatedTrees = userRepository.findGraduatedReviewCount(userId);
             }
         } else {
-            item.reset(today);
+            // 진척(stage)은 건드리지 않는다 — 다시 만날 날짜만 3일 뒤로 당긴다.
+            item.retryLater(today);
         }
 
         return ReviewAnswerResponse.of(
