@@ -408,7 +408,8 @@ public class QuizGenerationService {
                         .toList());
         GeneratedQuizDto dto = trialObjectMapper.convertValue(payload, GeneratedQuizDto.class);
 
-        boolean valid = openAIQuizClient.verifyStoredQuiz(dto, extraVerifyRules, verifyModel);
+        boolean valid = openAIQuizClient.verifyStoredQuiz(
+                dto, quiz.getCategory(), extraVerifyRules, verifyModel);
         log.info("[회귀검증] quizId={}, 실험기준={}, valid={}",
                 quizId, extraVerifyRules == null ? "현행" : "강화", valid);
         return valid;

@@ -171,7 +171,7 @@ public class OpenAIQuizClient {
             }
 
             // 2차: Claude cross-model 검증 (정답 정합성 + 이력과의 의미적 중복).
-            if (!verifyAnswer(quiz, recentQuestions, extraVerifyRules, verifyModelOverride)) {
+            if (!verifyAnswer(quiz, category, recentQuestions, extraVerifyRules, verifyModelOverride)) {
                 return Optional.empty();
             }
 
@@ -210,11 +210,13 @@ public class OpenAIQuizClient {
      *
      * 중복 판정은 목적이 아니므로 이력은 주입하지 않는다.
      */
-    public boolean verifyStoredQuiz(GeneratedQuizDto quiz, String extraVerifyRules, String verifyModelOverride) {
-        return verifyAnswer(quiz, null, extraVerifyRules, verifyModelOverride);
+    public boolean verifyStoredQuiz(GeneratedQuizDto quiz, Category category,
+                                    String extraVerifyRules, String verifyModelOverride) {
+        return verifyAnswer(quiz, category, null, extraVerifyRules, verifyModelOverride);
     }
 
-    private boolean verifyAnswer(GeneratedQuizDto quiz, List<String> recentQuestions, String extraVerifyRules, String verifyModelOverride) {
+    private boolean verifyAnswer(GeneratedQuizDto quiz, Category category, List<String> recentQuestions,
+            String extraVerifyRules, String verifyModelOverride) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .map(GeneratedQuizDto.ChoiceDto::getContent)
@@ -233,6 +235,14 @@ public class OpenAIQuizClient {
             }
         }
         String choicesText = choicesTextBuilder.toString();
+
+        // 카테고리 정합(기준 16) 판정 근거 — 종전에는 검증 프롬프트에 카테고리가 없어
+        // "이 문항이 어느 슬롯에 배정됐는가"를 검증기가 알 수 없었고, 소재 이탈
+        // (7/18 315 금리 슬롯의 물가 문항, 7/31 383 물가 슬롯의 복지제도 문항)을
+        // 구조적으로 판정할 수 없었다.
+        String categoryLabel = category != null
+                ? category.name() + "(" + category.getDisplayName() + ")"
+                : "미지정 — 이 경우 기준 16 은 적용하지 않는다";
 
         // 실험용 임시 검증 기준 (dry-run 워크벤치 전용, null 이면 프로덕션과 동일)
         String experimentalCriteria = "";
@@ -260,6 +270,8 @@ public class OpenAIQuizClient {
         String verifyPrompt = """
                 다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
                 아래 "경제 인과 룰북"과 경제 지식, 그리고 제공된 정보만으로 판단하세요.
+
+                이 문항이 배정된 카테고리: %s
 
                 경제 인과 룰북 (방향 판정의 절대 기준):
                 %s
@@ -317,11 +329,16 @@ public class OpenAIQuizClient {
                 15. 질문의 의문 초점(이유·차이·메커니즘·결과)과 정답의 내용이 정확히
                     대응하는지 확인하세요. 질문이 A를 묻는데 정답이 참이지만 다른 B를
                     서술하면 valid는 false입니다.
+                16. 문항의 핵심 소재가 위 "배정된 카테고리" 도메인에 속하지 않고, 그 카테고리의
+                    개념·메커니즘으로 연결하는 다리도 문항 안에 없을 때에만 valid는 false입니다.
+                    해당 시장·자산·정책 대상이 그 카테고리에 속하면(예: 주식시장의 거래 기법은
+                    STOCK, 부동산 보유세는 REAL_ESTATE) 소재가 세부 분야이더라도 정합으로 봅니다.
+                    판단이 애매하면 통과시키세요 — 이 기준은 명백한 이탈만 걸러냅니다.
                 %s%s%s
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """.formatted(CAUSAL_RULEBOOK, quiz.getQuestion(), choicesText, answerContent,
+                """.formatted(CAUSAL_RULEBOOK, categoryLabel, quiz.getQuestion(), choicesText, answerContent,
                         nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
                         duplicationCriterion, recentQuestionsSection, experimentalCriteria);
 
