@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -146,20 +147,33 @@ public class ReviewService {
                 .stream()
                 .collect(Collectors.toMap(Quiz::getId, Function.identity()));
 
+        // 오늘 세트에 실제로 뽑힌 항목 — 후광 표시의 기준.
+        // getTodayReviews 와 같은 선발 규칙(stage 내림차순 · 캡)을 재사용해야
+        // "빛나는 개수"와 "세션에서 실제로 나오는 개수"가 어긋나지 않는다.
+        Set<Long> todayQuizIds = reviewItemRepository
+                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                        userId, today, Limit.of(DAILY_QUEUE_CAP))
+                .stream()
+                .map(ReviewItem::getQuizId)
+                .collect(Collectors.toSet());
+
         List<GardenResponse.GardenItem> growing = new ArrayList<>();
         List<GardenResponse.GardenItem> graduated = new ArrayList<>();
         for (ReviewItem item : items) {
             Quiz quiz = quizById.get(item.getQuizId());
             if (quiz == null) continue;
-            (item.isGraduated() ? graduated : growing).add(GardenResponse.GardenItem.of(item, quiz));
+            boolean graduatedItem = item.isGraduated();
+            (graduatedItem ? graduated : growing).add(GardenResponse.GardenItem.of(
+                    item, quiz, !graduatedItem && todayQuizIds.contains(item.getQuizId())));
         }
         growing.sort(Comparator.comparing(GardenResponse.GardenItem::dueDate));
         graduated.sort(Comparator.comparing(GardenResponse.GardenItem::graduatedAt).reversed());
 
-        // 배지 숫자는 서버가 유일한 원천 — 클라가 growing 의 dueDate 로 세면
-        // 캡에 잘린 백로그까지 "오늘 할 일"로 보이게 된다.
-        int todayQueueSize = (int) Math.min(DAILY_QUEUE_CAP,
-                reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(userId, today));
+        // 배지 숫자는 후광이 켜진 항목 수와 '정의상' 같아야 한다 — 같은 목록에서 센다.
+        // (별도로 count 쿼리를 돌리면 고아 항목이 섞였을 때 배지 5 · 후광 4 로 어긋난다.)
+        int todayQueueSize = (int) growing.stream()
+                .filter(GardenResponse.GardenItem::inTodayQueue)
+                .count();
 
         return new GardenResponse(
                 growing, graduated, userRepository.findGraduatedReviewCount(userId), todayQueueSize);

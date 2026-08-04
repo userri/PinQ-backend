@@ -30,6 +30,11 @@ public record GardenResponse(
      * @param waterCount    물 준 총 횟수
      * @param absorbedCount 흡수된(맞힌) 횟수
      * @param graduatedAt   졸업 시각. null 이면 자라는 중
+     * @param inTodayQueue  오늘 복습 세트(캡 적용 상위 N개)에 실제로 뽑혔는가.
+     *                      <b>후광·강조 표시는 dueDate 가 아니라 이 값으로 그릴 것.</b>
+     *                      dueDate 만 보면 밀린 항목 전부가 대상으로 보여
+     *                      "빛나는 건 10개인데 배지는 5개"가 된다.
+     *                      졸업 항목은 항상 false.
      */
     public record GardenItem(
         Long quizId,
@@ -41,9 +46,10 @@ public record GardenResponse(
         LocalDate dueDate,
         int waterCount,
         int absorbedCount,
-        LocalDateTime graduatedAt
+        LocalDateTime graduatedAt,
+        boolean inTodayQueue
     ) {
-        public static GardenItem of(ReviewItem item, Quiz quiz) {
+        public static GardenItem of(ReviewItem item, Quiz quiz, boolean inTodayQueue) {
             return new GardenItem(
                 quiz.getId(),
                 quiz.getCategory().name(),
@@ -54,7 +60,8 @@ public record GardenResponse(
                 item.getDueDate(),
                 item.getWaterCount(),
                 item.getAbsorbedCount(),
-                item.getGraduatedAt()
+                item.getGraduatedAt(),
+                inTodayQueue
             );
         }
     }

@@ -3,6 +3,7 @@ package com.example.pinq_backend.review.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -207,25 +208,63 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("정원: 배지 숫자는 min(하루 캡, due 개수) — 백로그가 55개여도 5")
-    void garden_todayQueueSize_cappedAtDailyLimit() {
-        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of());
+    @DisplayName("정원: 밀린 항목이 7개여도 오늘 세트로 뽑힌 5개만 inTodayQueue=true (후광 대상)")
+    void garden_inTodayQueue_onlySelectedItems() {
+        // due 7개 — 전부 dueDate <= TODAY 라 'dueDate 만 보면' 7개가 후광 대상이 된다
+        List<ReviewItem> dueItems = new java.util.ArrayList<>();
+        for (long id = 1; id <= 7; id++) {
+            dueItems.add(ReviewItem.enqueue(user, id, TODAY.minusDays(3 + id)));
+        }
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(dueItems);
+        // 서버 선발 결과는 상위 5개
+        when(reviewItemRepository
+                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                        eq(USER_ID), eq(TODAY), any()))
+                .thenReturn(dueItems.subList(0, 5));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(anyList())).thenReturn(
+                dueItems.stream()
+                        .map(i -> QuizFixtures.sampleQuiz(i.getQuizId(), Category.STOCK, "문제" + i.getQuizId()))
+                        .toList());
         when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
-        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
-                .thenReturn(55L);
 
-        assertThat(service.getGarden(USER_ID).todayQueueSize()).isEqualTo(5);
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.growing()).hasSize(7);
+        assertThat(response.growing().stream().filter(GardenResponse.GardenItem::inTodayQueue))
+                .hasSize(5);
+        // 배지와 후광 개수는 정의상 같다 — 화면에서 "빛나는 건 7개인데 배지는 5" 가 나올 수 없다
+        assertThat(response.todayQueueSize()).isEqualTo(5);
     }
 
     @Test
-    @DisplayName("정원: due 가 캡보다 적으면 배지는 due 개수 그대로")
-    void garden_todayQueueSize_belowCap() {
-        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of());
+    @DisplayName("정원: 오늘 세트가 비면 후광도 배지도 0")
+    void garden_inTodayQueue_emptyWhenNothingDue() {
+        ReviewItem notDue = ReviewItem.enqueue(user, 1L, TODAY); // due = TODAY+3
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(notDue));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+                .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "아직 아님")));
         when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
-        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
-                .thenReturn(3L);
 
-        assertThat(service.getGarden(USER_ID).todayQueueSize()).isEqualTo(3);
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.growing().get(0).inTodayQueue()).isFalse();
+        assertThat(response.todayQueueSize()).isZero();
+    }
+
+    @Test
+    @DisplayName("정원: 졸업한 나무는 후광 대상이 아니다")
+    void garden_graduated_neverInTodayQueue() {
+        ReviewItem tree = ReviewItem.enqueue(user, 1L, TODAY.minusDays(30));
+        tree.graduate(TODAY.minusDays(1).atStartOfDay());
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(tree));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+                .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "나무")));
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(1);
+
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.graduated().get(0).inTodayQueue()).isFalse();
+        assertThat(response.todayQueueSize()).isZero();
     }
 
     @Test

@@ -82,8 +82,11 @@
   같은 단계 안에서는 오래 밀린 것 먼저.
 - **`nextDueDate` 의미**: 캡에 잘린 due 항목이 남아 있으면 `오늘+1`.
   (안 그러면 5개 완주 후 "다음 물주기 3일 뒤"라고 거짓말하게 됨)
-- **정원 배지**: "오늘 물 줄 잔디 N개"의 N = `GardenResponse.todayQueueSize` =
-  min(5, due 개수). **서버가 유일한 원천** — 클라가 growing 의 dueDate 로 직접 세지 말 것.
+- **정원 배지**: "오늘 물 줄 잔디 N개"의 N = `GardenResponse.todayQueueSize`.
+  **서버가 유일한 원천** — 클라가 growing 의 dueDate 로 직접 세지 말 것.
+- **정원 후광**: 식물 강조는 `GardenItem.inTodayQueue` 로 그린다. **`dueDate` 로 그리지 말 것** —
+  밀린 항목 전부가 켜져 "빛나는 건 10개인데 배지는 5개"가 된다(2026-08-03 실기기 발견).
+  `todayQueueSize` 는 `inTodayQueue` 인 항목을 센 값이라 **두 숫자는 정의상 일치**한다.
 - **채점은 캡과 무관하게 관대**: `POST /{quizId}/answer` 는 캡 밖/조기 항목도 받는다
   (시간대 경계·캐시 어긋남으로 사용자를 막지 않는 기존 정책 유지).
 
