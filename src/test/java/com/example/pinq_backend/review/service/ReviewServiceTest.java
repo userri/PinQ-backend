@@ -132,8 +132,7 @@ class ReviewServiceTest {
 
         ArgumentCaptor<Limit> limit = ArgumentCaptor.forClass(Limit.class);
         verify(reviewItemRepository)
-                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
-                        eq(USER_ID), eq(TODAY), limit.capture());
+                .findTodayQueue(eq(USER_ID), eq(TODAY), limit.capture());
         assertThat(limit.getValue().max()).isEqualTo(5);
     }
 
@@ -160,6 +159,50 @@ class ReviewServiceTest {
     }
 
     @Test
+    @DisplayName("오늘 복습: 오늘 이미 3개 풀었으면 남은 2개만 조회한다 — 상한은 '하루당'")
+    void todayReviews_remainingQuotaOnly() {
+        when(reviewItemRepository.countByUserIdAndLastReviewedOn(USER_ID, TODAY)).thenReturn(3L);
+        when(reviewItemRepository.findTodayQueue(eq(USER_ID), eq(TODAY), any())).thenReturn(List.of());
+
+        service.getTodayReviews(USER_ID);
+
+        ArgumentCaptor<Limit> limit = ArgumentCaptor.forClass(Limit.class);
+        verify(reviewItemRepository).findTodayQueue(eq(USER_ID), eq(TODAY), limit.capture());
+        assertThat(limit.getValue().max()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("오늘 복습: 오늘 몫을 다 쓰면 백로그가 남아 있어도 빈 큐 + 다음은 내일")
+    void todayReviews_quotaExhausted_emptyQueue() {
+        when(reviewItemRepository.countByUserIdAndLastReviewedOn(USER_ID, TODAY)).thenReturn(5L);
+        when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
+                .thenReturn(50L); // 백로그는 그대로 남아 있다
+
+        TodayReviewsResponse response = service.getTodayReviews(USER_ID);
+
+        assertThat(response.reviews()).isEmpty();
+        assertThat(response.nextDueDate()).isEqualTo(TODAY.plusDays(1));
+        // 몫이 0이면 조회 자체를 하지 않는다
+        verify(reviewItemRepository, never()).findTodayQueue(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("정원 배지: 오늘 몫을 다 쓰면 0 — 백로그가 남아 있어도 후광이 꺼진다")
+    void garden_quotaExhausted_badgeZero() {
+        ReviewItem due = ReviewItem.enqueue(user, 1L, TODAY.minusDays(3));
+        when(reviewItemRepository.countByUserIdAndLastReviewedOn(USER_ID, TODAY)).thenReturn(5L);
+        when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(due));
+        when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L)))
+                .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "문제")));
+        when(userRepository.findGraduatedReviewCount(USER_ID)).thenReturn(0);
+
+        GardenResponse response = service.getGarden(USER_ID);
+
+        assertThat(response.todayQueueSize()).isZero();
+        assertThat(response.growing().get(0).inTodayQueue()).isFalse();
+    }
+
+    @Test
     @DisplayName("오늘 복습: 퀴즈가 삭제된 고아 항목은 목록에서 빼고 정리한다")
     void todayReviews_cleansOrphans() {
         ReviewItem orphan = ReviewItem.enqueue(user, 99L, TODAY.minusDays(3));
@@ -176,7 +219,7 @@ class ReviewServiceTest {
     /** 오늘 큐 선발 결과와 due 총계를 스텁한다. */
     private void stubDueQueue(List<ReviewItem> selected, long dueTotal) {
         when(reviewItemRepository
-                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
+                .findTodayQueue(
                         eq(USER_ID), eq(TODAY), any(Limit.class)))
                 .thenReturn(selected);
         when(reviewItemRepository.countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(USER_ID, TODAY))
@@ -190,7 +233,7 @@ class ReviewServiceTest {
     void garden_splitsGrowingAndGraduated() {
         ReviewItem growing = ReviewItem.enqueue(user, 1L, TODAY.minusDays(1)); // due=TODAY+2
         ReviewItem tree = ReviewItem.enqueue(user, 2L, TODAY.minusDays(30));
-        tree.water(true);
+        tree.water(true, TODAY);
         tree.graduate(TODAY.minusDays(1).atStartOfDay());
         when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(List.of(growing, tree));
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(List.of(1L, 2L))).thenReturn(List.of(
@@ -218,8 +261,7 @@ class ReviewServiceTest {
         when(reviewItemRepository.findAllByUserId(USER_ID)).thenReturn(dueItems);
         // 서버 선발 결과는 상위 5개
         when(reviewItemRepository
-                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
-                        eq(USER_ID), eq(TODAY), any()))
+                .findTodayQueue(eq(USER_ID), eq(TODAY), any()))
                 .thenReturn(dueItems.subList(0, 5));
         when(quizRepository.findAllWithChoicesAndArticleByIdIn(anyList())).thenReturn(
                 dueItems.stream()

@@ -58,6 +58,23 @@ public class ReviewService {
     private final Clock clock;
 
     /**
+     * 오늘 남은 복습 몫만큼의 큐. <b>상한은 "한 번에"가 아니라 "하루당"이다.</b>
+     *
+     * 오늘 이미 푼 개수를 상한에서 빼고, 오늘 푼 항목은 후보에서도 제외한다.
+     * 이 계산이 없으면 한 문제를 풀어도 백로그의 다음 항목이 그 자리를 즉시 메워
+     * 큐·배지가 영원히 상한 크기로 유지되고, 완주가 구조적으로 불가능해진다
+     * (2026-08-04 실사용 발견: 5개를 다 풀어도 홈이 계속 "5문제"였음).
+     */
+    private List<ReviewItem> todayQueue(Long userId, LocalDate today) {
+        long doneToday = reviewItemRepository.countByUserIdAndLastReviewedOn(userId, today);
+        int remaining = (int) Math.max(0, DAILY_QUEUE_CAP - doneToday);
+        if (remaining == 0) {
+            return List.of();
+        }
+        return reviewItemRepository.findTodayQueue(userId, today, Limit.of(remaining));
+    }
+
+    /**
      * 오답 발생 시 복습 큐에 등록. 이미 등록돼 있으면 그대로 둔다
      * (기존 복습 진행 상태를 재풀이가 망가뜨리지 않도록).
      *
@@ -93,9 +110,7 @@ public class ReviewService {
     @Transactional
     public TodayReviewsResponse getTodayReviews(Long userId) {
         LocalDate today = LocalDate.now(clock);
-        List<ReviewItem> dueItems = reviewItemRepository
-                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
-                        userId, today, Limit.of(DAILY_QUEUE_CAP));
+        List<ReviewItem> dueItems = todayQueue(userId, today);
         long dueTotal = reviewItemRepository
                 .countByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqual(userId, today);
 
@@ -150,10 +165,7 @@ public class ReviewService {
         // 오늘 세트에 실제로 뽑힌 항목 — 후광 표시의 기준.
         // getTodayReviews 와 같은 선발 규칙(stage 내림차순 · 캡)을 재사용해야
         // "빛나는 개수"와 "세션에서 실제로 나오는 개수"가 어긋나지 않는다.
-        Set<Long> todayQuizIds = reviewItemRepository
-                .findAllByUserIdAndGraduatedAtIsNullAndDueDateLessThanEqualOrderByStageDescDueDateAsc(
-                        userId, today, Limit.of(DAILY_QUEUE_CAP))
-                .stream()
+        Set<Long> todayQuizIds = todayQueue(userId, today).stream()
                 .map(ReviewItem::getQuizId)
                 .collect(Collectors.toSet());
 
@@ -225,7 +237,7 @@ public class ReviewService {
         // 트랜잭션과 자기 교착이 된다 (QuizService.checkAnswer 의 동일 사고 참조).
         reviewDailyLogRecorder.record(userId, today, correct);
 
-        item.water(correct); // 물 주기 — 시도 사실을 카운터에 누적 (자기 row 갱신, 락 축 무관)
+        item.water(correct, today); // 물 주기 — 카운터 누적 + 오늘 몫 소진 표시 (자기 row 갱신)
 
         boolean graduated = false;
         Integer totalGraduatedTrees = null;

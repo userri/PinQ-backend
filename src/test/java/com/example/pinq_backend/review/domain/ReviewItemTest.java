@@ -84,9 +84,9 @@ class ReviewItemTest {
     void water_countsAttemptsAndAbsorbs() {
         ReviewItem item = ReviewItem.enqueue(user, 1L, DAY0);
 
-        item.water(true);
-        item.water(false);
-        item.water(true);
+        item.water(true, DAY0);
+        item.water(false, DAY0);
+        item.water(true, DAY0);
 
         assertThat(item.getWaterCount()).isEqualTo(3);
         assertThat(item.getAbsorbedCount()).isEqualTo(2);

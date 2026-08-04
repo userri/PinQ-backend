@@ -55,7 +55,7 @@ class AttemptHistoryServiceTest {
                 .thenReturn(List.of(QuizFixtures.sampleQuiz(1L, Category.STOCK, "문제")));
         when(userBookmarkRepository.findBookmarkedQuizIds(USER_ID, List.of(1L))).thenReturn(Set.of());
         ReviewItem item = ReviewItem.enqueue(user, 1L, LocalDate.of(2026, 7, 20));
-        item.water(true);
+        item.water(true, LocalDate.of(2026, 7, 20));
         when(reviewItemRepository.findAllByUserIdAndQuizIdIn(USER_ID, List.of(1L)))
                 .thenReturn(List.of(item));
 

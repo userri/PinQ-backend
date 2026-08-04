@@ -84,6 +84,16 @@ public class ReviewItem extends BaseTimeEntity {
     @Column(name = "absorbed_count", nullable = false)
     private int absorbedCount;
 
+    /**
+     * 마지막으로 물 준 날(KST). null 이면 아직 한 번도 복습하지 않음.
+     *
+     * 하루 상한을 "하루당"으로 만드는 핵심 컬럼이다. 이게 없으면 due 조회가
+     * 매 요청마다 백로그에서 상위 N개를 새로 뽑아, 한 문제를 풀어도 그 자리를
+     * 다음 항목이 즉시 메운다 — 큐가 영원히 줄지 않아 완주가 불가능해진다.
+     */
+    @Column(name = "last_reviewed_on")
+    private LocalDate lastReviewedOn;
+
     /** 졸업 시각. null 이면 아직 자라는 중. 졸업 후에는 복습 대상에서 영구 제외. */
     @Column(name = "graduated_at")
     private LocalDateTime graduatedAt;
@@ -98,8 +108,12 @@ public class ReviewItem extends BaseTimeEntity {
         return item;
     }
 
-    /** 복습 시도 1회 기록 — "물 주기". 채점 결과와 무관하게 항상 호출한다. */
-    public void water(boolean correct) {
+    /**
+     * 복습 시도 1회 기록 — "물 주기". 채점 결과와 무관하게 항상 호출한다.
+     * reviewedOn 을 남겨 오늘 몫을 소진했음을 표시한다(하루 상한 계산의 근거).
+     */
+    public void water(boolean correct, LocalDate reviewedOn) {
+        lastReviewedOn = reviewedOn;
         waterCount += 1;
         if (correct) {
             absorbedCount += 1;
