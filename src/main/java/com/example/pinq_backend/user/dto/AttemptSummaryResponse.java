@@ -34,13 +34,38 @@ public record AttemptSummaryResponse(
     boolean solved,
     boolean bookmarked,
     LocalDateTime solvedAt,
+    /** 북마크를 누른 시각. 북마크 목록에서만 채워지고 그 외 목록에서는 null.
+     *  북마크 목록의 정렬 축이 "담은 순서"(UserBookmark.createdAt)인데 화면은 solvedAt 을
+     *  찍고 있어 순서가 뒤죽박죽으로 보였다(2026-08-04). 정렬을 바꾸면 "방금 담은 게
+     *  위에 안 뜨는" 문제가 되므로, 표시 축을 정렬 축에 맞추도록 이 값을 내려준다. */
+    LocalDateTime bookmarkedAt,
     AttemptItemResponse.ReviewStatus review
 ) {
+    /** 북마크 목록 전용 — 담은 시각을 함께 내려준다. */
+    public static AttemptSummaryResponse ofBookmark(
+        Quiz quiz,
+        UserQuizAttempt attempt,
+        LocalDateTime bookmarkedAt,
+        ReviewItem reviewItem
+    ) {
+        return of(quiz, attempt, true, reviewItem, bookmarkedAt);
+    }
+
     public static AttemptSummaryResponse of(
         Quiz quiz,
         UserQuizAttempt attempt,
         boolean bookmarked,
         ReviewItem reviewItem
+    ) {
+        return of(quiz, attempt, bookmarked, reviewItem, null);
+    }
+
+    private static AttemptSummaryResponse of(
+        Quiz quiz,
+        UserQuizAttempt attempt,
+        boolean bookmarked,
+        ReviewItem reviewItem,
+        LocalDateTime bookmarkedAt
     ) {
         boolean solved = attempt != null;
         return new AttemptSummaryResponse(
@@ -54,6 +79,7 @@ public record AttemptSummaryResponse(
             solved,
             bookmarked,
             solved ? attempt.getCreatedAt() : null,
+            bookmarkedAt,
             AttemptItemResponse.ReviewStatus.from(reviewItem)
         );
     }

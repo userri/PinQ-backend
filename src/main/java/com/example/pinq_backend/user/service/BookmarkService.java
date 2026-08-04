@@ -95,10 +95,15 @@ public class BookmarkService {
                 (a, b) -> a // 같은 (user,quiz) 는 UK 로 1개만 존재. fallback.
             ));
 
+        // bookmarkedAt 을 함께 실어야 화면의 날짜가 정렬 축(담은 순서)과 같아진다 —
+        // solvedAt 만 내려주던 종전에는 목록이 뒤죽박죽 순서로 보였다.
         return bookmarks.stream()
-            .map(bm -> quizById.get(bm.getQuizId()))
-            .filter(q -> q != null) // 삭제된 quiz 는 스킵
-            .map(q -> AttemptSummaryResponse.of(q, attemptByQuizId.get(q.getId()), true, null))
+            .filter(bm -> quizById.containsKey(bm.getQuizId())) // 삭제된 quiz 는 스킵
+            .map(bm -> AttemptSummaryResponse.ofBookmark(
+                quizById.get(bm.getQuizId()),
+                attemptByQuizId.get(bm.getQuizId()),
+                bm.getCreatedAt(),
+                null))
             .toList();
     }
 }
