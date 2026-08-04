@@ -53,6 +53,8 @@ public class ReviewService {
 
     private final ReviewItemRepository reviewItemRepository;
     private final ReviewDailyLogRecorder reviewDailyLogRecorder;
+    // 읽기 전용 조회용 — 쓰기는 위 Recorder(REQUIRES_NEW 격리)를 거친다
+    private final com.example.pinq_backend.review.repository.ReviewDailyLogRepository reviewDailyLogRepository;
     private final QuizRepository quizRepository;
     private final UserRepository userRepository;
     private final Clock clock;
@@ -142,7 +144,17 @@ public class ReviewService {
                         .map(ReviewItem::getDueDate)
                         .orElse(null);
 
-        return new TodayReviewsResponse(reviews, nextDueDate);
+        // 오늘 집계는 ReviewDailyLog 에서 그대로 읽는다 — 세션이 아니라 하루가 사용자의 단위다.
+        // (정원에서 1개 + 세션에서 4개를 풀면 오늘은 5개인데, 세션 카운트로는 4로 보인다.)
+        int todayReviewed = 0;
+        int todayCorrect = 0;
+        var dailyLog = reviewDailyLogRepository.findByUserIdAndReviewDate(userId, today);
+        if (dailyLog.isPresent()) {
+            todayReviewed = dailyLog.get().getReviewedCount();
+            todayCorrect = dailyLog.get().getCorrectCount();
+        }
+
+        return new TodayReviewsResponse(reviews, nextDueDate, todayReviewed, todayCorrect);
     }
 
     /**

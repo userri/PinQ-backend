@@ -16,6 +16,7 @@ import com.example.pinq_backend.quiz.exception.InvalidChoiceException;
 import com.example.pinq_backend.quiz.exception.QuizNotFoundException;
 import com.example.pinq_backend.quiz.fixture.QuizFixtures;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
+import com.example.pinq_backend.review.domain.ReviewDailyLog;
 import com.example.pinq_backend.review.domain.ReviewItem;
 import com.example.pinq_backend.review.dto.GardenResponse;
 import com.example.pinq_backend.review.dto.ReviewAnswerResponse;
@@ -51,6 +52,7 @@ class ReviewServiceTest {
 
     @Mock private ReviewItemRepository reviewItemRepository;
     @Mock private ReviewDailyLogRecorder reviewDailyLogRecorder;
+    @Mock private com.example.pinq_backend.review.repository.ReviewDailyLogRepository reviewDailyLogRepository;
     @Mock private QuizRepository quizRepository;
     @Mock private UserRepository userRepository;
 
@@ -61,7 +63,8 @@ class ReviewServiceTest {
     void setUp() {
         Clock clock = Clock.fixed(TODAY.atStartOfDay(KST).toInstant(), KST);
         service = new ReviewService(
-                reviewItemRepository, reviewDailyLogRecorder, quizRepository, userRepository, clock);
+                reviewItemRepository, reviewDailyLogRecorder, reviewDailyLogRepository,
+                quizRepository, userRepository, clock);
         when(userRepository.getReferenceById(USER_ID)).thenReturn(user);
         when(reviewItemRepository.save(any(ReviewItem.class))).thenAnswer(inv -> inv.getArgument(0));
     }
@@ -101,6 +104,38 @@ class ReviewServiceTest {
     }
 
     // ── getTodayReviews ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("오늘 집계는 세션이 아니라 하루 단위다 — 정원에서 1개 + 세션에서 4개면 5개로 센다")
+    void todayReviews_countsPerDayNotPerSession() {
+        // 정원에서 1개, 세션에서 4개를 이미 푼 상태(총 5회 중 4회 정답)
+        ReviewDailyLog log = ReviewDailyLog.firstReviewOfDay(user, TODAY, true);
+        log.record(true);
+        log.record(true);
+        log.record(true);
+        log.record(false);
+        when(reviewDailyLogRepository.findByUserIdAndReviewDate(USER_ID, TODAY))
+                .thenReturn(Optional.of(log));
+        stubDueQueue(List.of(), 0L);
+
+        TodayReviewsResponse response = service.getTodayReviews(USER_ID);
+
+        assertThat(response.todayReviewed()).isEqualTo(5);
+        assertThat(response.todayCorrect()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("오늘 아직 복습 전이면 집계는 0/0 이다")
+    void todayReviews_zeroWhenNoLog() {
+        when(reviewDailyLogRepository.findByUserIdAndReviewDate(USER_ID, TODAY))
+                .thenReturn(Optional.empty());
+        stubDueQueue(List.of(), 0L);
+
+        TodayReviewsResponse response = service.getTodayReviews(USER_ID);
+
+        assertThat(response.todayReviewed()).isZero();
+        assertThat(response.todayCorrect()).isZero();
+    }
 
     @Test
     @DisplayName("오늘 복습: due 항목을 퀴즈와 함께 반환하고, 다음 예정일도 알려준다")
