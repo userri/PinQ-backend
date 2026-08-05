@@ -49,3 +49,8 @@ certbot/
 
 ### Local HTTPS certificates ###
 certs/local/
+
+### Claude Code 개인 설정 ###
+# 팀 공용 스킬(.claude/skills/)은 커밋하고, 개인 머신 경로가 담긴 권한 설정만 제외한다.
+# 이 레포는 공개이므로 로컬 경로·환경 정보를 올리지 않는다.
+.claude/settings.local.json
