@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  *  GET /api/me/wrong-notes       : 내 오답노트 (첫 시도 실패만, 최신순, 요약)
  *
  * 목록 = AttemptSummaryResponse(목록 행용), 상세 = AttemptItemResponse(상세 화면용).
- * 경량화 배경은 docs/api/wrong-notes-lightweight-request.md 참조.
+ * 경량화 배경은 docs/decisions/wrong-notes-lightweight-request.md 참조.
  */
 @RestController
 @RequestMapping("/api/me")

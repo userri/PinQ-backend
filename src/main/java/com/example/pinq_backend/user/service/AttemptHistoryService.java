@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
  *  - getAttemptDetail : 단건 상세 — 상세 화면용 전체 필드
  *
  * 목록은 AttemptSummaryResponse(요약), 상세는 AttemptItemResponse(전체).
- * 목록 경량화 배경·배포 순서는 docs/api/wrong-notes-lightweight-request.md 참조 —
+ * 목록 경량화 배경·배포 순서는 docs/decisions/wrong-notes-lightweight-request.md 참조 —
  * 프론트 지연 로드 전환(9cfad84 계열) 배포 확인 후 목록에서 무거운 필드를 제거했다.
  */
 @Service

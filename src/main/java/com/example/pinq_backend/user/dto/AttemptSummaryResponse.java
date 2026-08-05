@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 /**
  * 오답노트 / 전체 이력 / 북마크 "목록" 응답 항목 — 목록 행이 쓰는 요약만.
  *
- * 목록 경량화(docs/api/wrong-notes-lightweight-request.md):
+ * 목록 경량화(docs/decisions/wrong-notes-lightweight-request.md):
  * 목록 행에 필요 없는 무거운 필드(choices/selectedChoiceId/correctChoiceId/
  * explanation/article)는 싣지 않는다.
  *

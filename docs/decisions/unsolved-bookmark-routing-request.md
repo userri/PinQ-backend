@@ -1,7 +1,7 @@
 # [백엔드 → 프론트] 미풀이 북마크 "풀러가기" 죽은 링크 수정 요청 (단건 풀이 라우팅)
 
 작성: 2026-07-24 / 백엔드 세션
-관련: `docs/api/wrong-notes-lightweight-request.md`(경량화 3단계 완료), PENDING.md "미풀이 북마크 익일 죽은 링크"
+관련: `docs/decisions/wrong-notes-lightweight-request.md`(경량화 3단계 완료), PENDING.md "미풀이 북마크 익일 죽은 링크"
 
 ## 배경 / 문제
 
