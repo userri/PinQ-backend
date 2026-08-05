@@ -37,8 +37,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
      *
      * read-modify-write 대신 DB 원자적 증가로 처리해, 여러 기기에서
      * 동시에 졸업 채점이 들어와도 카운트가 유실되지 않는다.
+     *
+     * <b>clearAutomatically 를 켜지 않는다.</b> 이 UPDATE 는 채점 트랜잭션 한가운데서
+     * 불리는데, 1차 캐시를 비우면 호출자가 쥐고 있던 quiz·review_item 이 통째로 detach 돼
+     * 뒤이어 응답 DTO 가 lazy 연관(기사)을 건드리는 순간 LazyInitializationException 이 난다
+     * (2026-08-05 실서버: 졸업 채점만 500, 롤백돼 졸업 자체가 성립하지 않았다).
+     * 갱신값은 아래 {@link #findGraduatedReviewCount} 가 스칼라 쿼리로 DB 에서 직접 읽으므로
+     * 캐시를 비울 이유도 없다.
      */
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("UPDATE User u SET u.graduatedReviewCount = u.graduatedReviewCount + 1 WHERE u.id = :userId")
     void incrementGraduatedReviewCount(@Param("userId") Long userId);
 
