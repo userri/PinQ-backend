@@ -15,9 +15,10 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 1. **로그 부분 읽기 (전량 금지)**: `docs/quality-audit-log.md`의 **상단 판정 기준 섹션 + 최근 2~3개 일자 항목만** 읽는다 (Read offset/limit 또는 head+tail — 파일이 매일 자라므로 전량 읽기는 낭비). 추적 중인 관찰 카운트와 형식 파악이 목적.
 2. **오늘 발행분 조회**: Claude가 SSH로 프로덕션 서버에 직접 접속해 아래 명령을 실행하고 출력을 받는다.
 3. **전수 판정**: 문항별로 질문·해설·keyword·선지 4지를 기준별로 판정.
-4. **기록 append**: 기존 형식 그대로 로그에 항목 추가.
-5. **커밋 + push (항상 main, worktree 금지)**: 검수는 코드 변경이 없는 로그 append 이므로 **worktree 를 쓰지 말고 메인 레포(`/Users/iyr/SSAFY/PinQ-backend`, main 체크아웃)에서 직접 커밋·push** 한다 — cherry-pick 단계가 없어야 충돌이 원천 차단된다 (2026-07-23 스킬 파일 충돌 선례). `.md` 전용 push 는 CI 스킵. 만에 하나 worktree 세션이라면 [[quiz-audit-merge-to-main]] 절차로 폴백.
-6. **대기 작업 확인**: `docs/PENDING.md`를 훑고, 조건이 충족된 항목("X 배포 후 Y" 류)이 있으면 사용자에게 보고한다. 다단계 핸드오프의 복귀 트리거가 사람 기억뿐이라 후속 단계가 누락됐던 사고(7/23 목록 경량화 3단계) 재발 방지 장치.
+4. **치명 결함 원문 보존 (치명 판정이 하나라도 있을 때만)**: 로그 항목 안에 해당 문항의 **교정 전 question·choices 4지(정답 표시)·explanation·keyword 를 원문 그대로** 인용 블록으로 남긴다. 요약·재서술 금지 — 글자 그대로. 발견 시점에 남기지 않으면 사라진다 (8/4 id 400 이 수기 교정으로 소실돼 유일한 명백 결함의 회귀 검증 표본이 없었다). 형식은 아래 "기록 형식" 참조.
+5. **기록 append**: 기존 형식 그대로 로그에 항목 추가.
+6. **커밋 + push (항상 main, worktree 금지)**: 검수는 코드 변경이 없는 로그 append 이므로 **worktree 를 쓰지 말고 메인 레포(`/Users/iyr/SSAFY/PinQ-backend`, main 체크아웃)에서 직접 커밋·push** 한다 — cherry-pick 단계가 없어야 충돌이 원천 차단된다 (2026-07-23 스킬 파일 충돌 선례). `.md` 전용 push 는 CI 스킵. 만에 하나 worktree 세션이라면 [[quiz-audit-merge-to-main]] 절차로 폴백.
+7. **대기 작업 확인**: `docs/PENDING.md`를 훑고, 조건이 충족된 항목("X 배포 후 Y" 류)이 있으면 사용자에게 보고한다. 다단계 핸드오프의 복귀 트리거가 사람 기억뿐이라 후속 단계가 누락됐던 사고(7/23 목록 경량화 3단계) 재발 방지 장치.
 
 ## 고정 조회 명령 (Claude가 SSH로 직접 실행)
 
@@ -70,6 +71,18 @@ ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" 'cd ~/pinq_backend && set -a && . ./.env
 - 연속 치명 0 기록은 직전 항목에서 이어 센다
 - 표 형식·PASS/FAIL 등급표로 바꾸지 않는다 — 기존 산문형 유지
 
+치명 결함이 있는 날은 그 항목 아래에 **원문 보존 블록**을 이어 붙인다 (치명일 때만 — 경계·관찰은 불필요):
+
+```markdown
+### 원문 보존 — id NNN (교정 전)
+- **question**: (원문 그대로)
+- **choices**: 1) … 2) … ✅ 3) … 4) …   ← 정답에 ✅
+- **explanation**: (원문 그대로)
+- **keyword**: (원문 그대로)
+```
+
+이 블록은 회귀 검증 표본이다 — 나중에 룰·기준을 바꿨을 때 "그 결함을 잡아내는가"를 되돌려 확인할 유일한 근거다. 교정·재생성이 이뤄진 뒤에는 복원할 수 없으므로 **검수 커밋에 반드시 함께 들어가야 한다**.
+
 ## 원칙
 
 **룰 추가는 단발 사례로 하지 않는다.** 결함·패턴이 반복 확인될 때만 워크벤치 실험(trial_quiz)을 거쳐 채택한다 (확립된 운영 원칙 — 실험 #9 보류, #10 채택 선례).
@@ -84,3 +97,4 @@ ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" 'cd ~/pinq_backend && set -a && . ./.env
 | 단발 결함에 즉시 룰 추가 | 반복 확인 → 실험 → 채택 |
 | 접속 정보(IP·키 경로)를 스킬/레포에 하드코딩 | `~/.pinq-ops.env`의 `PINQ_SSH_*` 참조 |
 | docs 커밋 후 push 보류 | docs 전용 push는 CI 스킵 — 바로 push |
+| 치명 결함을 요약만 적고 원문 미보존 | 발견 시점에 원문 4종(question·choices·explanation·keyword)을 글자 그대로 보존 — 교정 후엔 복원 불가 |
