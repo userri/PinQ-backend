@@ -285,6 +285,49 @@ class QuizGenerationServiceDedupTest {
         verify(quizRepository, times(1)).save(any(Quiz.class));
     }
 
+    @Test
+    @DisplayName("keyword 용어가 그 문항의 카테고리명과 같으면 폐기하고 다음 기사를 쓴다")
+    void termEqualToCategoryName_isDiscarded() throws Exception {
+        when(naverNewsClient.search(eq("원달러 환율"), anyInt())).thenReturn(List.of(
+                newsItem("기사A", "https://news.example.com/a"),
+                newsItem("기사B", "https://news.example.com/b")
+        ));
+
+        // 기사A → 용어가 카테고리명 그대로("환율") = 정보량 0. 실발행분 12건의 형태 그대로다.
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "달러 공급이 늘면 원화 가치는 어떻게 되는가?",
+                        "환율: 두 통화 간 교환 비율")));
+        when(openAIQuizClient.generateQuiz(eq("기사B"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "외국인 자금이 유출되면 원화 가치는 왜 떨어지는가?",
+                        "자본 유출: 국내 자산을 팔아 해외로 빠져나가는 자금 흐름")));
+
+        int generated = service.generateTodayQuizzes();
+        assertThat(generated).isEqualTo(1);
+
+        ArgumentCaptor<Quiz> savedQuiz = ArgumentCaptor.forClass(Quiz.class);
+        verify(quizRepository, times(1)).save(savedQuiz.capture());
+        assertThat(savedQuiz.getValue().getKeyword()).startsWith("자본 유출");
+    }
+
+    @Test
+    @DisplayName("다른 카테고리 문항의 용어로 쓰인 카테고리명은 정보량이 있어 통과시킨다")
+    void categoryNameAsTermOfAnotherCategory_isKept() throws Exception {
+        when(naverNewsClient.search(eq("기준금리"), anyInt())).thenReturn(List.of(
+                newsItem("기사A", "https://news.example.com/a")
+        ));
+        // 금리 문항의 용어가 "환율" — 겹치는 낱말이 없으므로 목록에서 중복으로 보이지 않는다
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(
+                        "미국 금리가 오르면 원화 환율은 왜 상승 압력을 받는가?",
+                        "환율: 두 통화 간 교환 비율")));
+
+        int generated = service.generateTodayQuizzes();
+        assertThat(generated).isEqualTo(1);
+        verify(quizRepository, times(1)).save(any(Quiz.class));
+    }
+
     private GeneratedQuizDto quizDto(String question, String keyword) throws Exception {
         return objectMapper.readValue("""
                 {

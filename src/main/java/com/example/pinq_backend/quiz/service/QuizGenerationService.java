@@ -287,10 +287,28 @@ public class QuizGenerationService {
                     continue;
                 }
 
+                String term = extractKeywordTerm(dto.getKeyword());
+
+                // 저장 전 방어선 0: keyword 용어가 그 문항의 카테고리 표시명과 같으면 폐기.
+                // 이때 keyword 의 정보량이 0이라(환율 문항의 용어가 "환율") 오답노트 목록이
+                // `환율 / 환율 · 7-31` 처럼 같은 낱말을 두 줄에 겹쳐 찍는다. 프롬프트는 이미
+                // 정보량 있는 용어를 요구하고 있으나 발행분 316건 중 12건이 이렇게 나왔고
+                // 그중 7건이 최근 3주였다(2026-08-05 전수 측정) — 지시로는 안 막힌다.
+                // 글자까지 같으면 정보량 0인 게 정의상 참이라 오탐이 원리적으로 없다.
+                //
+                // 아래 재사용 가드의 TERM_GUARD_EXEMPT 와 헷갈리지 말 것: 그쪽은 "같은 용어가
+                // 며칠 만에 또 나오는가"를 보고 본원 용어를 봐주는 규칙이고, 여기는 "이 문항의
+                // 카테고리와 같은 낱말인가"를 본다. 다른 카테고리 문항의 용어로 쓰이는 것은
+                // 정보량이 있으므로(금리 문항의 용어 "환율") 막지 않는다.
+                if (term != null && term.equals(category.getDisplayName())) {
+                    log.info("keyword 용어가 카테고리명과 동일해 폐기. category={}, term={}, question={}",
+                            category, term, dto.getQuestion());
+                    continue;
+                }
+
                 // 저장 전 방어선 1: 최근 동일 소재(keyword 용어) 재출제 차단.
                 // 질문 나열 주입·렉시컬 검사는 문장 단위라 "문장이 다른 같은 소재"
                 // (총량 규제 3연속 사례)를 못 막는다 — 용어 축으로 결정적으로 자른다.
-                String term = extractKeywordTerm(dto.getKeyword());
                 if (term != null && !TERM_GUARD_EXEMPT.contains(term)
                         && history.isRecentTerm(category, term)) {
                     log.info("최근 {}일 내 동일 keyword 용어 재출제로 폐기. category={}, term={}, question={}",
