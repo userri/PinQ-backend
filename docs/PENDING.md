@@ -6,6 +6,9 @@
 
 ## 대기 중
 
+- [ ] **마이페이지 개념 섹션 실서버 확인 (8/5 작업의 남은 검증)**: 다섯 상태 재편을 Showcase 로만 봤다. 실기기에서 실제 계정 마이페이지를 열어 어느 상태가 뜨는지·문구가 데이터와 맞는지 확인. SWR 캐시라 값이 늦게 바뀌면 토큰으로 `GET /api/users/me/concept-stats` 직접 호출. 맥락: `PinQ-frontend/docs/handoff/2026-08-05-concept-diagnosis-and-garden.md`
+- [ ] **`weakest` 응답 필드 정리 여부 (착수 조건: 이 값을 손볼 일이 생겼을 때)**: 프론트가 절대 기준으로 직접 판정하게 되어 **더 이상 쓰지 않는다**(8/5). 다른 소비자가 없으면 정리 대상이지만 급하지 않다. 규칙: `docs/rules/concept-diagnosis.md` §3.2
+- [ ] **"요즘" 문구 복원 — 기간 필터가 선행 조건**: `countByCategory` 에 기간 조건이 없어 전체 기간 누적이라 "요즘"을 뺐다(8/5). 창(예: 30일)을 도입하면 그 안에서 표본 3개를 못 채우는 사용자가 대부분일 수 있으니 `MIN_ATTEMPTS_FOR_DIAGNOSIS` 도 함께 재검토
 - [ ] **프론트 문서 위치를 도구 기본값에 맞추기 (착수 조건: 해당 문서를 건드릴 일이 생겼을 때 묶어서)**: 별도 작업으로 잡지 않는다 — 색인(`docs/README.md`)이 이미 길을 안내하므로 급하지 않다. 옮길 것 ① `PinQ-frontend/docs/{plans,specs}` → `docs/superpowers/{plans,specs}` (superpowers 스킬이 지정하는 저장 위치. `skills/brainstorming/SKILL.md:29`·`skills/writing-plans/SKILL.md:18`, 6.1.1·6.2.0 동일 — 백엔드는 이미 맞고 프론트만 어긋남) ② `PinQ-frontend/docs/ui-rules.md` → `docs/rules/ui.md` ③ 겸사겸사 `plans/review-tree-plan.md` 를 `YYYY-MM-DD-` 접두어 컨벤션에 맞춰 개명. **방법**: `git mv` 로 히스토리 보존 + 참조 갱신 + 양 레포 `docs/README.md` 색인 수정을 **같은 커밋에**. 폴더 개명·`archive/` 격리는 검토 후 기각(비용 대비 이득 없음)
 - [ ] **기준 16 효과·부작용 추적 (8/5~)**: ① 5/5 발행 유지 여부(개념 포화와 겹치면 4/5 위험) ② 카테고리 이탈 재발 여부. 4/5 발행이 나오면 기준 16 문구 완화. 근거: `docs/quality-audit-log.md` "채택 (8/4 오전) — 카테고리 정합"
 - [ ] **검수 출구 조건 — 조건 충족, 점감 개시 판단만 남음**: 추적 패턴 2개가 모두 닫힘(keyword 계열 7/28 룰 채택 · 카테고리 이탈 8/4 기준 16 채택). 다만 8/4 에 치명 1(400)이 나와 21일 연속 기록이 끊긴 직후이므로, **기준 16·용어 가드의 효과가 며칠 확인된 뒤** 주 2~3회로 점감 (7/23 합의)
