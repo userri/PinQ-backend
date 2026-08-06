@@ -30,6 +30,7 @@
 - [ ] **[앱] `weakest` 응답 필드 정리 여부 (이 값을 손볼 일이 생겼을 때)**: 프론트가 절대 기준으로 직접 판정하게 되어 **더 이상 쓰지 않는다**(8/5). 다른 소비자가 없으면 정리 대상이지만 급하지 않다. 규칙: `docs/rules/concept-diagnosis.md` §3.2
 - [ ] **[앱] "요즘" 문구 복원 — 기간 필터가 선행 조건**: `countByCategory` 에 기간 조건이 없어 전체 기간 누적이라 "요즘"을 뺐다(8/5). 창(예: 30일)을 도입하면 그 안에서 표본 3개를 못 채우는 사용자가 대부분일 수 있으니 `MIN_ATTEMPTS_FOR_DIAGNOSIS` 도 함께 재검토
 - [ ] **[앱] 오답노트 목록 행 글자 크기 (프론트 몫, 그 화면을 건드릴 때 묶어서)**: 날짜·카테고리가 지금(`labelSmall`) 작다 — 한 단계 키운다(사용자 요청 8/5). 표시 규칙 SSOT: `../PinQ-frontend/docs/ui-rules.md`
+- [ ] **[앱] 스토어 이미지 재생성 — 런처 아이콘이 바뀌었다 (다음 배포 때)**: 프론트 `4f4eecc` 에서 아이콘을 **라임 면 + 네이비 새싹 네거티브**로 교체했다(종전 네이비 배경 + 라임 후광). 이것들은 **APK 와 별개로 Play Console 에 수동 업로드**하는 물건이라 배포해도 자동 반영되지 않는다 — 512 아이콘·피처 그래픽·스크린샷 7장이 옛 아이콘을 담고 있다. 뽑는 법·규격·검증법: `../PinQ-frontend/store-assets/README.md`
 - [ ] **[문서] 프론트 문서 위치를 도구 기본값에 맞추기 (해당 문서를 건드릴 때 묶어서)**: 옮길 것 ① `PinQ-frontend/docs/{plans,specs}` → `docs/superpowers/{plans,specs}` (superpowers 스킬 지정 위치, 백엔드는 이미 맞음) ② `PinQ-frontend/docs/ui-rules.md` → `docs/rules/ui.md` ③ `plans/review-tree-plan.md` 를 `YYYY-MM-DD-` 컨벤션으로 개명. **방법**: `git mv` + 참조 갱신 + 양 레포 색인 수정을 **같은 커밋에**. 폴더 개명·`archive/` 격리는 기각(비용 대비 이득 없음)
 
 ## 완료 (최근)
