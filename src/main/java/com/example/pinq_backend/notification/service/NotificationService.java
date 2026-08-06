@@ -39,7 +39,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationService {
 
     static final String PUSH_TITLE = "오늘의 경제 퀴즈가 도착했어요";
-    static final String PUSH_BODY = "방금 나온 경제 뉴스로 만든 4문제, 지금 풀어보세요!";
+
+    /**
+     * 알림 본문. <b>개수는 그날 실제 발행 수를 넣는다 — 상수로 두면 거짓이 된다.</b>
+     * 종전 문구는 "방금 나온 경제 뉴스로 만든 4문제"였고 두 군데가 사실이 아니었다:
+     *  - "방금": 알림은 사용자가 설정한 시각에 가고 발행은 그보다 앞선다. 서버가 보증 못 하는 시간 표현.
+     *  - "4문제": 발행은 5카테고리 = 5문제가 기본이고, 리젝이 나면 그날만 줄어든다.
+     */
+    static String pushBody(long quizCount) {
+        return "경제 뉴스로 만든 %d문제, 지금 풀어보세요!".formatted(quizCount);
+    }
 
     private final UserRepository userRepository;
     private final UserDeviceTokenRepository deviceTokenRepository;
@@ -57,7 +66,8 @@ public class NotificationService {
     public int sendDailyReminders(LocalTime slot) {
         LocalDate today = LocalDate.now(clock);
 
-        if (quizRepository.countByQuizDate(today) == 0) {
+        long quizCount = quizRepository.countByQuizDate(today);
+        if (quizCount == 0) {
             log.info("[알림] 오늘({}) 퀴즈가 없어 슬롯 {} 알림을 건너뜀", today, slot);
             return 0;
         }
@@ -71,7 +81,7 @@ public class NotificationService {
         int sentUsers = 0;
         for (User user : targets) {
             try {
-                if (sendToUser(user, today, slot)) {
+                if (sendToUser(user, today, slot, quizCount)) {
                     sentUsers++;
                 }
             } catch (Exception e) {
@@ -84,7 +94,7 @@ public class NotificationService {
     }
 
     /** @return 1개 이상의 토큰으로 실제 전송했으면 true */
-    private boolean sendToUser(User user, LocalDate today, LocalTime slot) {
+    private boolean sendToUser(User user, LocalDate today, LocalTime slot, long quizCount) {
         // 전송 '전에' 로그를 남긴다 — 유니크 제약 위반이면 다른 인스턴스/재실행이
         // 이미 처리한 것이므로 스킵. (전송 후 기록 방식은 기록 직전 크래시 시 중복 발송 위험)
         try {
@@ -104,7 +114,7 @@ public class NotificationService {
         boolean anySent = false;
         for (UserDeviceToken deviceToken : tokens) {
             FcmPushClient.SendResult result =
-                    fcmPushClient.send(deviceToken.getToken(), PUSH_TITLE, PUSH_BODY);
+                    fcmPushClient.send(deviceToken.getToken(), PUSH_TITLE, pushBody(quizCount));
             switch (result) {
                 case SENT -> anySent = true;
                 case INVALID_TOKEN -> deviceTokenRepository.delete(deviceToken);
@@ -131,11 +141,17 @@ public class NotificationService {
     }
 
     /**
-     * 디바이스 토큰 등록.
-     * 같은 토큰이 이미 있으면(같은 기기에서 재로그인·계정 전환) 기존 행을 지우고
+     * 디바이스 토큰 등록. <b>멱등하다</b> — 같은 토큰을 몇 번 등록해도 성공한다.
+     * 앱 시작 시 재등록이 정상 흐름이라(프론트 `d68dfd7`) 중복 호출이 예외 상황이 아니다.
+     *
+     * 같은 토큰이 다른 사용자에게 있으면(같은 기기에서 계정 전환) 기존 행을 지우고
      * 새 소유자로 재등록한다 — 이전 계정으로 알림이 가는 것을 방지.
+     *
+     * <b>@Transactional 을 걸지 않는다.</b> 유니크 제약 위반을 잡아서 성공으로 넘겨야 하는데,
+     * 하나의 트랜잭션 안에서 제약 위반이 나면 catch 해도 트랜잭션이 rollback-only 로 오염돼
+     * 커밋 시점에 UnexpectedRollbackException 이 난다. 이 클래스의 sendDailyReminders 가
+     * 같은 이유로 트랜잭션을 걸지 않으며, 조회·삭제·저장은 리포지토리의 기본 트랜잭션으로 처리한다.
      */
-    @Transactional
     public void registerToken(Long userId, String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("디바이스 토큰이 비어 있습니다.");
@@ -143,16 +159,21 @@ public class NotificationService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("사용자를 찾을 수 없습니다: " + userId));
 
-        deviceTokenRepository.findByToken(token).ifPresent(existing -> {
-            if (existing.getUser().getId().equals(userId)) {
-                return; // 같은 사용자의 재등록 — 그대로 유지
+        var existing = deviceTokenRepository.findByToken(token);
+        if (existing.isPresent()) {
+            if (existing.get().getUser().getId().equals(userId)) {
+                return; // 같은 사용자의 재등록 — 이미 목표 상태다
             }
-            deviceTokenRepository.delete(existing);
-            deviceTokenRepository.flush(); // 유니크 제약 충돌 방지: 삭제를 먼저 반영
-        });
+            deviceTokenRepository.delete(existing.get()); // 소유자 이전
+        }
 
-        if (deviceTokenRepository.findByToken(token).isEmpty()) {
+        try {
             deviceTokenRepository.save(UserDeviceToken.create(user, token));
+        } catch (DataIntegrityViolationException e) {
+            // 위 조회와 이 INSERT 사이에 다른 요청이 같은 토큰을 넣은 경우 — 둘 다 "없음"을 보고
+            // 둘 다 INSERT 한다(2026-08-06 실기기: 2초 간격 두 요청 중 뒤엣것이 500).
+            // 최종 상태는 "그 토큰 행이 존재한다"로 같으므로 성공으로 처리한다.
+            log.debug("디바이스 토큰 동시 등록 감지, 스킵. userId={}", userId);
         }
     }
 
