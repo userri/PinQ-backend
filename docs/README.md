@@ -1,11 +1,13 @@
 # 문서 색인
 
 이 레포의 문서는 **성격이 다섯 가지**뿐이다. 폴더가 아니라 이 표에서 찾는다.
-프론트 레포에도 같은 색인이 있다 → [`../PinQ-frontend/docs/README.md`](../PinQ-frontend/docs/README.md)
+프론트 레포에도 같은 색인이 있다 → [`../../PinQ-frontend/docs/README.md`](../../PinQ-frontend/docs/README.md)
 
-> **다른 레포 파일을 가리키는 법 — 형제 상대경로로 쓴다.**
-> `../PinQ-frontend/docs/...` (○) / `PinQ-frontend/docs/...` (✗)
-> 레포 이름부터 쓰면 **현재 열려 있는 레포 기준**으로 해석돼 파일을 못 찾는다. 두 레포는 `SSAFY/` 아래 형제라 `../` 하나면 닿는다.
+> **다른 레포 파일을 가리키는 법 — 이 파일이 놓인 위치에서 센다.**
+> 마크다운 링크는 문서가 **놓인 폴더** 기준으로 풀린다. 레포 루트 기준이 아니다.
+> `docs/README.md` 에서 → `../../PinQ-frontend/docs/...`  (`docs/` 를 빠져나오고, 레포를 빠져나온다)
+> `docs/rules/*.md` 처럼 한 단계 깊으면 → `../../../PinQ-frontend/docs/...`
+> 레포 이름부터 쓰는 `PinQ-frontend/docs/...` 는 **어디서도 안 맞는다.**
 > `/Users/...` 절대경로는 커밋되는 문서에 쓰지 않는다 — 다른 머신에서 깨진다. 추적되지 않는 `CLAUDE.md` 에만 쓴다.
 
 | 성격 | 뜻 | 어디 |
@@ -72,4 +74,4 @@
 |---|---|
 | [../README.md](../README.md) | 프로젝트 소개 — 매일 아침 AI가 경제 뉴스에서 5문제 자동 출제 |
 | `.claude/skills/quiz-audit/SKILL.md` | 일일 퀴즈 검수 절차. 고정 조회 명령(SSH + 인라인 SQL) 포함 |
-| `../PinQ-frontend/docs/` | 프론트 문서. 같은 색인 있음 |
+| `../../PinQ-frontend/docs/` | 프론트 문서. 같은 색인 있음 |
