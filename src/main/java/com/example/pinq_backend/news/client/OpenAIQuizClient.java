@@ -157,6 +157,8 @@ public class OpenAIQuizClient {
                     .retrieve()
                     .body(String.class);
 
+            logTokenUsage("generate", rawResponse);
+
             Optional<GeneratedQuizDto> quizOpt = parseQuiz(rawResponse);
             if (quizOpt.isEmpty()) return Optional.empty();
 
@@ -349,6 +351,16 @@ public class OpenAIQuizClient {
             log.info("Claude 검증 실패로 퀴즈 폐기. question={}", quiz.getQuestion());
         }
         return valid;
+    }
+
+    /** 응답 usage 를 로그로 남긴다. 파싱 실패는 무시 — 계측이 본 기능을 깨면 안 된다. */
+    private void logTokenUsage(String kind, String rawResponse) {
+        try {
+            String line = TokenUsageLogger.format(kind, objectMapper.readTree(rawResponse));
+            if (line != null) log.info(line);
+        } catch (Exception e) {
+            log.debug("token-usage 파싱 실패. kind={}", kind, e);
+        }
     }
 
     private Optional<GeneratedQuizDto> parseQuiz(String rawResponse) {

@@ -90,6 +90,10 @@ public class AnthropicVerifyClient {
 
             JsonNode root = objectMapper.readTree(rawResponse);
 
+            // 토큰 사용량 계측 (axis 실험 0단계 기준선). usage 가 없으면 조용히 생략.
+            String usageLine = TokenUsageLogger.format("verify", root);
+            if (usageLine != null) log.info(usageLine);
+
             // Anthropic 응답 구조: { "content": [ { "type": "text", "text": "..." } ], ... }
             // OpenAI(choices[0].message.content)와 위치가 다르므로 주의.
             String text = root.path("content").get(0).path("text").asText();
