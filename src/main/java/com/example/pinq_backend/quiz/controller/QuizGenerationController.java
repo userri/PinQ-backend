@@ -1,6 +1,7 @@
 package com.example.pinq_backend.quiz.controller;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.quiz.dto.AxisLabelResponse;
 import com.example.pinq_backend.quiz.dto.TrialQuizResponse;
 import com.example.pinq_backend.quiz.service.QuizGenerationService;
 import java.util.Map;
@@ -64,6 +65,22 @@ public class QuizGenerationController {
         String verifyModel = request != null ? request.verifyModel() : null;
         return ResponseEntity.ok(
                 quizGenerationService.trialGenerate(category, gen, verify, model, promptOverride, verifyModel));
+    }
+
+    /**
+     * axis 명명 수렴성 dry-run (스펙 2026-08-08-axis-dedup-design.md 1단계).
+     * DB 무변경 — 라벨은 응답으로만 반환한다. 카테고리당 최근 N일 발행분을
+     * 날짜순 증분 라벨링하고 "가드를 켰다면 막혔을 건수"를 함께 센다.
+     *
+     * ⚠️ 카테고리당 문항 수만큼 순차 OpenAI 호출 → 수십 초 소요.
+     *    nginx(60s)를 피해 컨테이너 안에서 localhost:8080 으로 호출할 것 (회귀 하네스와 동일).
+     */
+    @PostMapping("/label-axes")
+    public ResponseEntity<AxisLabelResponse> labelAxes(
+        @RequestParam("category") Category category,
+        @RequestParam(value = "days", defaultValue = "30") int days
+    ) {
+        return ResponseEntity.ok(quizGenerationService.labelAxes(category, days));
     }
 
     /** @param extraVerifyRules (선택) 실험용 추가 검증 기준. 없으면 현행 프로덕션 기준으로 판정 */
