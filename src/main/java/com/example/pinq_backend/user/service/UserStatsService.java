@@ -136,7 +136,11 @@ public class UserStatsService {
     /**
      * 연간 잔디밭 (GitHub contribution graph 스타일).
      *
-     * 활동이 있는 날만 sparse 로 반환한다 — 신규 학습을 한 날 ∪ 복습만 한 날.
+     * 활동이 있는 날만 sparse 로 반환한다 — **신규 학습(첫 시도)을 한 날만** 칸이 된다.
+     * 복습만 한 날은 칸이 생기지 않는다(2026-08-08 개정) — 복습은 스트릭도 안 잇는데
+     * 잔디만 level 1 로 찍혀 축 구분이 어정쩡했고, 연한 잔디의 의미가 과적재됐었다.
+     * 복습의 성과는 나무(graduatedTrees)·정원으로만 표현한다.
+     * 같은 날 신규 학습 + 복습이면 칸은 신규 학습으로 생기고 reviewed 가 병기된다.
      * level 규칙과 스트릭·잔디의 축 구분은 {@link GrassResponse} javadoc 참조.
      */
     @Transactional
@@ -166,9 +170,9 @@ public class UserStatsService {
         // 발행 수 조회는 필요 없다 — 잔디 등급이 '맞힌 개수' 한 축으로 단순화되면서
         // 완주 목표치(min(4, 발행수)) 보정이 사라졌다 (2026-07-27).
 
-        // 신규 학습을 한 날과 복습만 한 날의 합집합이 '활동일'이다.
+        // 활동일 = 신규 학습(첫 시도)을 한 날만. 복습만 한 날은 칸을 만들지 않는다
+        // (2026-08-08 개정 — reviewedByDate 는 병기용으로만 남는다).
         Set<LocalDate> activeDates = new java.util.TreeSet<>(attemptsByDate.keySet());
-        activeDates.addAll(reviewedByDate.keySet());
 
         List<GrassResponse.GrassDay> days = activeDates.stream()
                 .map(date -> {
@@ -196,7 +200,7 @@ public class UserStatsService {
      *  4 = 4문제 이상 정답 (라임, 최고 등급)
      *  3 = 3문제 정답
      *  2 = 2문제 정답
-     *  1 = 1문제 정답, 또는 정답 0 (푼 날·복습만 한 날 포함) — 연한 잔디
+     *  1 = 1문제 정답, 또는 풀었는데 정답 0 — 연한 잔디
      *
      * 규칙 단순화 (2026-07-27):
      * 종전에는 "그날 발행분 완주(min(4, 발행수)) + 전부 정답"이라야 최고 등급이었다.
@@ -208,8 +212,8 @@ public class UserStatsService {
      * 완주 목표치·발행수 보정·전부정답 조건이 모두 불필요해지고, 밀린 문제를 나중에
      * 푸는 행동이 오히려 보상된다.
      *
-     * 복습 수를 인자로 받지 않는 이유는 그대로 — 잔디는 '신규 학습(첫 시도)'의 지표이며,
-     * 복습만 한 날은 정답 0 으로 취급되어 level 1 을 넘지 않는다.
+     * 복습 수를 인자로 받지 않는 이유는 그대로 — 잔디는 '신규 학습(첫 시도)'의 지표다.
+     * 복습만 한 날은 애초에 칸이 생기지 않는다(getGrass 의 활동일 판정, 2026-08-08 개정).
      */
     private static int grassLevel(int correct) {
         if (correct >= LIME_CORRECT_THRESHOLD) {

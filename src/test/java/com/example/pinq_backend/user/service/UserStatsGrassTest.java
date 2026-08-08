@@ -118,8 +118,8 @@ class UserStatsGrassTest {
     }
 
     @Test
-    @DisplayName("신규 학습 없이 복습만 한 날도 활동일로 잡히고 연한 잔디(level 1)가 심어진다")
-    void grass_reviewOnlyDay_isLevelOne() {
+    @DisplayName("복습만 한 날은 잔디 칸이 생기지 않는다 — 복습은 나무로만 표현 (2026-08-08 개정)")
+    void grass_reviewOnlyDay_hasNoCell() {
         LocalDate reviewOnly = TODAY.minusDays(2);
 
         when(userQuizAttemptRepository.countAttemptsByDateBetween(eq(USER_ID), any(), any()))
@@ -131,13 +131,8 @@ class UserStatsGrassTest {
 
         GrassResponse grass = service.getGrass(USER_ID);
 
-        assertThat(grass.totalActiveDays()).isEqualTo(1);
-        assertThat(grass.days()).singleElement().satisfies(day -> {
-            assertThat(day.date()).isEqualTo(reviewOnly);
-            assertThat(day.solved()).isZero();
-            assertThat(day.reviewed()).isEqualTo(9);
-            assertThat(day.level()).isEqualTo(1); // 복습 9개를 해도 연한 잔디
-        });
+        assertThat(grass.totalActiveDays()).isZero();
+        assertThat(grass.days()).isEmpty(); // 복습 9개를 해도 칸 없음 — 성과는 나무 카운터로
         assertThat(grass.perfectDays()).isZero();
     }
 
