@@ -353,6 +353,78 @@ public class OpenAIQuizClient {
         return valid;
     }
 
+    /**
+     * axis(뉴스 사건 축) 라벨링 프롬프트 — 명명 수렴성 dry-run 전용 (스펙 1단계).
+     *
+     * 핵심: 사건은 고유명사가 아니라 자유 명명이면 같은 사건도 날마다 다르게 적힌다.
+     * 그래서 이미 부여된 라벨 목록을 보여주고 "같은 사건이면 반드시 그 표기 재사용"을
+     * 지시한다 — 2단계 결정적 가드(문자열 동일 비교)가 성립하는지가 이 실험의 판정 대상.
+     */
+    static String axisLabelPrompt(String question, String keyword, Category category,
+            List<String> knownAxes) {
+        String reuseSection = "";
+        if (knownAxes != null && !knownAxes.isEmpty()) {
+            reuseSection = """
+
+                    [기존 축 목록 — 재사용 우선]
+                    %s
+                    ※ 이 문항의 축이 위 목록의 사건과 같으면 반드시 그 표기를 그대로 쓰세요.
+                       정말 새로운 사건일 때만 새 이름을 붙이세요.
+                    """.formatted(String.join("\n", knownAxes.stream().map(a -> "- " + a).toList()));
+        }
+        return """
+                다음 경제 퀴즈 문항이 딛고 선 "뉴스 사건 축"을 한 구절로 명명하세요.
+
+                축은 문항이 가르치는 개념(keyword)이 아니라, 그 배경이 된 현실 세계의
+                사건·상황입니다. 예: 문항의 keyword 가 "엔 캐리트레이드"여도 배경 사건이
+                엔화 가치 하락이면 축은 "엔화 약세"입니다.
+
+                카테고리: %s (%s)
+                질문: %s
+                keyword: %s
+                %s
+                응답은 JSON 한 줄: {"axis": "축 이름"}
+                축 이름은 15자 이내 명사구. 설명·마크다운 금지.
+                """.formatted(category.name(), category.getDisplayName(), question, keyword, reuseSection);
+    }
+
+    /**
+     * 저장된 문항 하나에 axis 라벨을 부여한다 (DB 무변경, 이력 미등록).
+     * 실패 시 empty — 호출부(dry-run 집계)는 해당 문항을 "라벨 실패"로 센다.
+     */
+    public Optional<String> labelAxis(String question, String keyword, Category category,
+            List<String> knownAxes) {
+        Map<String, Object> requestBody = Map.of(
+                "model", props.model(),
+                "max_tokens", 100,
+                "messages", List.of(
+                        Map.of("role", "user", "content",
+                                axisLabelPrompt(question, keyword, category, knownAxes))
+                )
+        );
+        try {
+            String rawResponse = restClient.post()
+                    .uri(OPENAI_API_URL)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
+            logTokenUsage("label-axis", rawResponse);
+
+            JsonNode root = objectMapper.readTree(rawResponse);
+            String text = root.path("choices").get(0).path("message").path("content").asText();
+            String json = text.trim()
+                    .replaceAll("^```json\\s*", "")
+                    .replaceAll("^```\\s*", "")
+                    .replaceAll("```\\s*$", "")
+                    .trim();
+            String axis = objectMapper.readTree(json).path("axis").asText(null);
+            return (axis == null || axis.isBlank()) ? Optional.empty() : Optional.of(axis.trim());
+        } catch (Exception e) {
+            log.warn("axis 라벨링 실패. question={}", question, e);
+            return Optional.empty();
+        }
+    }
+
     /** 응답 usage 를 로그로 남긴다. 파싱 실패는 무시 — 계측이 본 기능을 깨면 안 된다. */
     private void logTokenUsage(String kind, String rawResponse) {
         try {
