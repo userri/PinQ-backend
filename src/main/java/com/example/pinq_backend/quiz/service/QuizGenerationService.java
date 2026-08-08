@@ -11,6 +11,7 @@ import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.example.pinq_backend.news.dto.NaverNewsItem;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
+import com.example.pinq_backend.quiz.dto.AxisLabelResponse;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -18,7 +19,9 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -532,6 +535,57 @@ public class QuizGenerationService {
         } catch (Exception e) {
             log.warn("[dry-run] 실험 로그 저장 실패 (응답에는 영향 없음)", e);
         }
+    }
+
+    /** axis 가드 시뮬레이션 창 (일). 2단계 AXIS_GUARD_DAYS 기본 후보와 같은 값. */
+    private static final int AXIS_DRY_RUN_WINDOW_DAYS = 7;
+
+    /**
+     * 명명 수렴성 dry-run (스펙 2026-08-08-axis-dedup-design.md 1단계) — DB 무변경, 이력 미등록.
+     *
+     * 과거 발행분을 quiz_date 오름차순으로 라벨링하되, 이미 부여한 라벨을
+     * 다음 호출의 재사용 목록으로 넘긴다 — 프로덕션의 증분 생성 흐름을 모사해야
+     * 수렴성 측정이 실제와 같은 조건이 된다 (한 번에 전부 보여주면 과대평가).
+     *
+     * 알려진 한계: 카테고리는 loadDedupHistory 와 같은 article 경유 프록시라
+     * 기사 재사용 시 실제 출제 카테고리와 어긋날 수 있다.
+     */
+    @Transactional(readOnly = true)
+    public AxisLabelResponse labelAxes(Category category, int days) {
+        LocalDate today = LocalDate.now(clock);
+        List<Quiz> quizzes = quizRepository.findAllByQuizDateGreaterThanEqual(today.minusDays(days))
+                .stream()
+                .filter(q -> q.getCategory() == category)
+                .sorted(Comparator.comparing(Quiz::getQuizDate))
+                .toList();
+
+        List<AxisLabelResponse.Item> items = new ArrayList<>();
+        List<String> knownAxes = new ArrayList<>();        // 부여 순서 유지 (재사용 목록)
+        Map<String, LocalDate> lastSeen = new HashMap<>(); // axis → 마지막 등장일 (차단 판정)
+        int failed = 0;
+
+        for (Quiz quiz : quizzes) {
+            Optional<String> axisOpt = openAIQuizClient.labelAxis(
+                    quiz.getQuestion(), quiz.getKeyword(), category, knownAxes);
+            if (axisOpt.isEmpty()) {
+                failed++;
+                continue;
+            }
+            String axis = axisOpt.get();
+
+            LocalDate prev = lastSeen.get(axis);
+            boolean wouldBlock = prev != null
+                    && !prev.isBefore(quiz.getQuizDate().minusDays(AXIS_DRY_RUN_WINDOW_DAYS));
+
+            items.add(new AxisLabelResponse.Item(
+                    quiz.getId(), quiz.getQuizDate(),
+                    extractKeywordTerm(quiz.getKeyword()), axis, wouldBlock));
+            if (!knownAxes.contains(axis)) knownAxes.add(axis);
+            lastSeen.put(axis, quiz.getQuizDate());
+        }
+
+        int blocked = (int) items.stream().filter(AxisLabelResponse.Item::wouldBlock).count();
+        return new AxisLabelResponse(category.name(), days, items.size(), failed, blocked, items);
     }
 
     /**
