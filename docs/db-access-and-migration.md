@@ -3,6 +3,13 @@
 prod MySQL 에 붙어 스키마를 바꾸는 표준 절차. **비밀번호를 명령줄에 직접 쓰지 않는다** —
 `.env` 를 셸에 로드해 변수로만 참조한다.
 
+**접속 정보(호스트·키 경로)도 이 문서에 적지 않는다.** 이 레포는 공개다. 아래 명령은
+로컬 전용 `~/.pinq-ops.env` 의 `PINQ_SSH_HOST`·`PINQ_SSH_KEY` 를 참조한다 — 먼저 셸에 로드할 것:
+
+```bash
+set -a && . ~/.pinq-ops.env && set +a
+```
+
 ## 사실 확인 (2026-08-04, `docker-compose.yml` 기준)
 
 | 항목 | 값 | 근거 |
@@ -19,7 +26,7 @@ prod MySQL 에 붙어 스키마를 바꾸는 표준 절차. **비밀번호를 �
 ## 1. 접속
 
 ```bash
-ssh -i ~/Downloads/pinq-aqure-key.pem ubuntu@20.194.0.153
+ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST"
 ```
 
 ```bash
@@ -37,10 +44,10 @@ SQL 을 셸에 다시 타이핑하지 않는다. **레포에 커밋된 파일을
 
 ```bash
 # 로컬에서 한 번에
-scp -i ~/Downloads/pinq-aqure-key.pem \
-  docs/migration/<파일>.sql ubuntu@20.194.0.153:/tmp/m.sql
+scp -i "$PINQ_SSH_KEY" \
+  docs/migration/<파일>.sql "$PINQ_SSH_HOST":/tmp/m.sql
 
-ssh -i ~/Downloads/pinq-aqure-key.pem ubuntu@20.194.0.153 \
+ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" \
   'cd ~/pinq_backend && set -a && . ./.env && set +a && \
    docker exec -i mysql-container mysql -uroot -p"$DB_PASSWORD" "$DB_NAME" < /tmp/m.sql && \
    rm /tmp/m.sql'
@@ -82,7 +89,7 @@ SELECT @@global.time_zone, @@session.time_zone, NOW(), UTC_TIMESTAMP();
 포트가 루프백 한정이라 직접 접속은 안 된다. SSH 터널을 쓴다.
 
 ```bash
-ssh -i ~/Downloads/pinq-aqure-key.pem -L 3307:127.0.0.1:3306 ubuntu@20.194.0.153 -N
+ssh -i "$PINQ_SSH_KEY" -L 3307:127.0.0.1:3306 "$PINQ_SSH_HOST" -N
 ```
 
 이후 `localhost:3307` 로 접속. 계정은 `root`, 비밀번호는 서버 `.env` 의 `DB_PASSWORD`.
