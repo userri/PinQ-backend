@@ -16,16 +16,24 @@
 
 ### 날짜가 박힌 것 (먼저 본다)
 
-- [ ] **[검수] 8/10·8/11 발행분 검수 미실행 (착수 조건: `~/.pinq-ops.env` 에 `PINQ_ADMIN_SECRET` 을 넣은 직후)**: 로그 마지막 항목이 8/9 다. **스케줄 작업이 0건이라 어디서도 자동으로 돌지 않는다** — 사람이 돌려야 한다. 조회는 8/11 배포된 `~/bin/pinq-quiz-fetch.sh`(HTTPS) 로 하고, 서브커맨드는 종전과 같다. 넣을 값은 서버 `~/pinq_backend/.env` 의 `ADMIN_SECRET` 이며 **읽으려면 SSH 가 필요하다** — 사내망은 아웃바운드 22 가 막혀(8/11 실측: :22 실패 / :443 성공) 집 회선이나 폰 핫스팟에서 한 번 꺼내와야 한다. 절차 3줄(SSH 되는 회선에서):
+- [ ] **[검수] 8/10·8/11 발행분 검수 미실행 (착수 조건: `~/.pinq-ops.env` 에 `PINQ_ADMIN_SECRET` 을 넣은 직후)**: 로그 마지막 항목이 8/9 다. **스케줄 작업이 0건이라 어디서도 자동으로 돌지 않는다** — 사람이 돌려야 한다. 조회는 8/11 배포된 `~/bin/pinq-quiz-fetch.sh`(HTTPS) 로 하고, 서브커맨드는 종전과 같다. 넣을 값은 서버 `~/pinq_backend/.env` 의 `ADMIN_SECRET` 이다. **검수를 돌릴 머신에서 SSH 가 될 필요는 없다** — 값은 문자열 하나라 22 가 열린 머신에서 한 번 읽어 손으로 옮기면 되고, 그 뒤로 그 머신은 443 만 쓴다. 사내망은 아웃바운드 22 가 막혀 있다(8/11 실측 :22 실패 / :443 성공, 맥 집 회선은 8/12 실측 둘 다 성공).
+
+  **① 22 가 열린 머신에서 값 읽기** (맥이면 아래 그대로. 키 경로는 그 머신 기준 — 윈도우 데스크탑은 `C:\SSAFY\iyr-desktop\.pinq-ops\pinq-aqure-key.pem`)
 
   ```bash
-  # ① 서버에서 값 읽기 (키 경로는 그 머신 기준으로 — 윈도우 데스크탑은 C:\SSAFY\iyr-desktop\.pinq-ops\pinq-aqure-key.pem)
-  ssh -i <키경로> ubuntu@20.194.0.153 "grep ADMIN_SECRET ~/pinq_backend/.env"
-  # ② 로컬 설정에 두 줄 쓰기 (파일 통째 덮어씀 — 기존 SSH 키 항목은 이제 안 쓴다)
-  printf 'PINQ_API_BASE=https://finq.duckdns.org\nPINQ_ADMIN_SECRET=<①의 값>\n' > ~/.pinq-ops.env && chmod 600 ~/.pinq-ops.env
-  # ③ 확인 — 날짜별 발행 수가 나오면 성공
-  bash ~/bin/pinq-quiz-fetch.sh counts
+  ssh -i "$(grep PINQ_SSH_KEY ~/.pinq-ops.env | sed 's/.*=//' | tr -d "\"'")" ubuntu@20.194.0.153 "grep '^ADMIN_SECRET' ~/pinq_backend/.env"
   ```
+
+  **② 검수 돌릴 머신에 두 줄 놓기.** 윈도우는 `%USERPROFILE%\.pinq-ops.env` 를 **새로 만들면 된다**(그 머신엔 원래 없다). SSH 줄은 넣지 않는다 — 443 만 쓴다.
+
+  ```
+  PINQ_API_BASE=https://finq.duckdns.org
+  PINQ_ADMIN_SECRET=<①의 값>
+  ```
+
+  ⚠️ **맥에서는 기존 파일에 이어붙인다**(`>>`). `>` 로 덮으면 `PINQ_SSH_KEY`·`PINQ_SSH_HOST` 가 날아가는데, 구 SSH 판 백업 `~/bin/pinq-quiz-fetch.ssh.bak.sh` 가 아직 그 둘을 읽는다(8/12 확인). 맥 파일은 `export` 형식이라 새 줄도 `export` 로 맞춘다.
+
+  **③ 확인** — 날짜별 발행 수가 나오면 성공: `bash ~/bin/pinq-quiz-fetch.sh counts`
 
   `~/.pinq-ops.env` 는 동기화 대상이 아니라 **머신마다 따로** 놓아야 한다(맥에 이미 있어도 데스크탑엔 없다). ⚠️ `logs` 는 메모리 링버퍼라 8/11 배포 이전 기록이 없다 — 8/10 은 SKIP·폐기 사유를 못 보므로 발행분 전문으로만 판정하고 원인 불명은 그렇게 적는다(없었다고 단정하지 말 것)
 
