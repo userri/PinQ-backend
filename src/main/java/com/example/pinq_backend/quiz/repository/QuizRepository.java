@@ -82,6 +82,33 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
         """, nativeQuery = true)
     List<QuizStatRow> findQuizStatsSince(@Param("fromDate") LocalDate fromDate);
 
+    /**
+     * 날짜별 발행 수 + id 범위 (검수 조회용).
+     *
+     * 발행 수는 검수의 부작용 축이다 — 룰을 조이면 리젝이 재생성을 불러 5/5 를 못 채우는
+     * 날이 생기는지 여기서 본다. id 범위는 그날 발행분을 로그·기록과 대조할 때 쓴다.
+     */
+    @Query(value = """
+        SELECT q.quiz_date AS quizDate,
+               COUNT(*) AS published,
+               MIN(q.id) AS firstId,
+               MAX(q.id) AS lastId
+        FROM quiz q
+        WHERE q.quiz_date IS NOT NULL
+        GROUP BY q.quiz_date
+        ORDER BY q.quiz_date DESC
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<PublishCountRow> findRecentPublishCounts(@Param("limit") int limit);
+
+    /** findRecentPublishCounts 결과 인터페이스 프로젝션. */
+    interface PublishCountRow {
+        LocalDate getQuizDate();
+        Long getPublished();
+        Long getFirstId();
+        Long getLastId();
+    }
+
     /** findQuizStatsSince 결과 인터페이스 프로젝션. */
     interface QuizStatRow {
         Long getQuizId();
