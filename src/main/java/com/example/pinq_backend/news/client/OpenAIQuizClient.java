@@ -219,6 +219,23 @@ public class OpenAIQuizClient {
 
     private boolean verifyAnswer(GeneratedQuizDto quiz, Category category, List<String> recentQuestions,
             String extraVerifyRules, String verifyModelOverride) {
+        String verifyPrompt = verifyPrompt(quiz, category, recentQuestions, extraVerifyRules);
+
+        // Anthropic Claude로 cross-model 검증 위임.
+        // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
+        boolean valid = anthropicVerifyClient.verify(verifyPrompt, verifyModelOverride);
+        return handleVerifyResult(valid, quiz);
+    }
+
+    /**
+     * 검증 프롬프트 조립 — 테스트가 문자열을 직접 볼 수 있도록 분리했다.
+     *
+     * 분리 이유: 종전에는 조립이 HTTP 호출과 한 메서드에 묶여 있어 단위 테스트가 불가능했고,
+     * 그 사이 2026-08-04 기준 16 채택(4140dd5)에서 카테고리와 룰북 인자가 뒤바뀐 채
+     * 8일간 발행됐다(8/12 발견). 조립 결과를 직접 검증할 수 있어야 같은 사고를 막는다.
+     */
+    static String verifyPrompt(GeneratedQuizDto quiz, Category category, List<String> recentQuestions,
+            String extraVerifyRules) {
         String answerContent = quiz.getChoices().stream()
                 .filter(GeneratedQuizDto.ChoiceDto::isAnswer)
                 .map(GeneratedQuizDto.ChoiceDto::getContent)
@@ -269,7 +286,7 @@ public class OpenAIQuizClient {
                     """.formatted(formatQuestionList(recentQuestions));
         }
 
-        String verifyPrompt = """
+        return """
                 다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
                 아래 "경제 인과 룰북"과 경제 지식, 그리고 제공된 정보만으로 판단하세요.
 
@@ -340,13 +357,19 @@ public class OpenAIQuizClient {
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """.formatted(CAUSAL_RULEBOOK, categoryLabel, quiz.getQuestion(), choicesText, answerContent,
+                """
+                // ⚠️ 인자 순서 = 템플릿의 %s 등장 순서. 카테고리가 룰북보다 **앞**에 나온다.
+                // 2026-08-04 기준 16 채택(4140dd5)에서 새 %s 를 룰북 앞에 넣고 인자는 뒤에 붙여
+                // 둘이 어긋난 채 8일간 발행됐다 — 검증기가 "배정된 카테고리" 자리에서 룰북 전문을,
+                // "인과 룰북" 자리에서 카테고리명 한 단어를 읽었다(8/12 발견).
+                // %s 를 새로 추가할 때는 OpenAIQuizClientPromptTest 의 자리 검증이 함께 깨진다.
+                .formatted(categoryLabel, CAUSAL_RULEBOOK, quiz.getQuestion(), choicesText, answerContent,
                         nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
                         duplicationCriterion, recentQuestionsSection, experimentalCriteria);
+    }
 
-        // Anthropic Claude로 cross-model 검증 위임.
-        // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
-        boolean valid = anthropicVerifyClient.verify(verifyPrompt, verifyModelOverride);
+    /** 검증 결과 로깅 — 폐기 사유가 로그에만 남으므로 호출부에서 분리해 둔다. */
+    private boolean handleVerifyResult(boolean valid, GeneratedQuizDto quiz) {
         if (!valid) {
             log.info("Claude 검증 실패로 퀴즈 폐기. question={}", quiz.getQuestion());
         }
@@ -714,12 +737,12 @@ public class OpenAIQuizClient {
             """.formatted(category.name(), category.getDisplayName(), title, content, recentSection);
     }
 
-    private String nullToEmpty(String s) {
+    private static String nullToEmpty(String s) {
         return s == null ? "" : s;
     }
 
     /** 문항 목록을 프롬프트용 "- 문항" 줄 목록으로 변환. */
-    private String formatQuestionList(List<String> questions) {
+    private static String formatQuestionList(List<String> questions) {
         return questions.stream()
                 .map(q -> "- " + q)
                 .collect(java.util.stream.Collectors.joining("\n"));
