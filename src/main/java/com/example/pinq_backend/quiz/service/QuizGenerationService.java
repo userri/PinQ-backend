@@ -243,6 +243,24 @@ public class QuizGenerationService {
         // 운영 데이터에서 확인됐기 때문 (예: 기준금리→주담대 금리 경로가 하루 2회).
         List<String> promptHistory = history.promptQuestionsFor(category);
 
+        // 이 카테고리에서 이번 사이클에 이미 시도했다 실패한 기사 URL.
+        //
+        // 키워드 목록이 서로 겹쳐(예: INFLATION 의 "물가 상승"·"물가") 같은 기사가 여러 키워드의
+        // 검색 결과에 함께 들어온다. usedUrls 는 '저장에 성공한' 기사만 담으므로(아래 usedUrls.add
+        // 는 save 직후에만 실행) 실패한 기사는 다음 키워드 루프에서 스크래핑·LLM 호출까지 그대로
+        // 반복됐다. 2026-08-12 실측: INFLATION 94회 시도 = 서로 다른 기사 51건(1.8배),
+        // EXCHANGE_RATE 53회 = 26건(2.0배). 재시도로 성공한 사례는 로그상 0건이다 —
+        // SKIP 사유가 기사 속성(카테고리 부적합·사설·소재 중복)이라 검색 키워드가 바뀌어도
+        // 같은 판정이 나오기 때문이다. 즉 순수 낭비이며 발행 수에는 영향이 없다.
+        //
+        // 범위를 이 메서드 호출(= 카테고리 × 사이클)로 한정하는 이유:
+        //  - 카테고리를 넘겨 공유하면 안 된다. "이 기사는 INFLATION 과 무관" 판정이 EXCHANGE_RATE
+        //    에서도 유효하다는 보장이 없다(슬롯마다 판정이 다르다).
+        //  - 날짜를 넘겨 캐시하면 안 된다. 06:04 에 실패한 기사가 07:10 백필에서 통과한 사례가
+        //    있다(기사 풀·이력이 갱신되므로 재평가 기회를 남긴다).
+        // 설계: docs/superpowers/specs/2026-08-12-concept-saturation-design.md ⓐ
+        Set<String> triedUrls = new HashSet<>();
+
         for (String keyword : keywords) {
             List<NaverNewsItem> newsItems = naverNewsClient.search(keyword, NEWS_FETCH_COUNT);
 
@@ -255,15 +273,20 @@ public class QuizGenerationService {
                 String title = item.cleanTitle();
                 if (title.isBlank()) continue;
 
-                if (isEditorialTitle(title)) {
-                    log.info("사설·칼럼 기사 건너뜀. category={}, title={}", category, title);
-                    continue;
-                }
-
                 // 이미 다른 카테고리에서 사용한 기사 건너뜀
                 String url = item.originallink() != null ? item.originallink() : item.link();
                 if (usedUrls.contains(url)) {
                     log.info("중복 기사 건너뜀. category={}, url={}", category, url);
+                    continue;
+                }
+
+                // 이번 사이클에 이 카테고리에서 이미 실패한 기사 — 조용히 건너뛴다.
+                // 사유 로그는 첫 시도에서 이미 남았으므로 여기서 다시 찍으면 SKIP 사유 집계가
+                // 부풀어(같은 기사가 여러 번 계수) 검수의 손실 분해를 왜곡한다.
+                if (!triedUrls.add(url)) continue;
+
+                if (isEditorialTitle(title)) {
+                    log.info("사설·칼럼 기사 건너뜀. category={}, title={}", category, title);
                     continue;
                 }
 
@@ -381,7 +404,8 @@ public class QuizGenerationService {
             log.info("키워드 후보 소진, 다음 키워드 시도. category={}, keyword={}", category, keyword);
         }
 
-        log.warn("모든 키워드에서 퀴즈 생성 실패. category={}", category);
+        log.warn("모든 키워드에서 퀴즈 생성 실패. category={}, 시도한 기사={}건(중복 제외)",
+                category, triedUrls.size());
         return false;
     }
 

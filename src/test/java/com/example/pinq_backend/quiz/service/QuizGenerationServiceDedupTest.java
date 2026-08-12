@@ -328,6 +328,57 @@ class QuizGenerationServiceDedupTest {
         verify(quizRepository, times(1)).save(any(Quiz.class));
     }
 
+    // ── 사이클 내 실패 기사 메모 ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("한 키워드에서 실패한 기사는 같은 카테고리의 다음 키워드에서 다시 시도하지 않는다")
+    void failedArticle_isNotRetriedAcrossKeywordsInSameCategory() throws Exception {
+        // 같은 기사가 INFLATION 의 네 키워드 검색 결과에 함께 들어온다 (실운영의 키워드 겹침)
+        NaverNewsItem shared = newsItem("겹치는기사", "https://news.example.com/shared");
+        when(naverNewsClient.search(eq("소비자물가"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("물가 상승"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("인플레이션"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("물가"), anyInt())).thenReturn(List.of(shared));
+
+        // 기사 속성 때문에 SKIP — 키워드가 바뀌어도 판정은 같다
+        when(openAIQuizClient.generateQuiz(
+                eq("겹치는기사"), anyString(), eq(Category.INFLATION), anyList()))
+                .thenReturn(Optional.empty());
+
+        int generated = service.generateTodayQuizzes();
+
+        assertThat(generated).isZero();
+        // 종전에는 키워드 수만큼 4회 호출됐다 — 스크래핑·생성 각 1회로 줄어든다
+        verify(openAIQuizClient, times(1))
+                .generateQuiz(eq("겹치는기사"), anyString(), eq(Category.INFLATION), anyList());
+        verify(naverArticleScraper, times(1)).scrape(shared.link());
+    }
+
+    @Test
+    @DisplayName("한 카테고리에서 실패한 기사라도 다른 카테고리 슬롯에서는 다시 판정한다")
+    void failedArticle_isStillTriedByAnotherCategory() throws Exception {
+        // 같은 기사가 두 카테고리 검색에 걸린다. 슬롯마다 정합 판정이 다르므로 재평가해야 한다
+        NaverNewsItem shared = newsItem("겹치는기사", "https://news.example.com/shared");
+        when(naverNewsClient.search(eq("기준금리"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("원달러 환율"), anyInt())).thenReturn(List.of(shared));
+
+        // INTEREST_RATE 슬롯에서는 부적합, EXCHANGE_RATE 슬롯에서는 통과
+        when(openAIQuizClient.generateQuiz(
+                eq("겹치는기사"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(Optional.empty());
+        String fresh = "달러 공급이 늘면 원·달러 환율은 어느 방향으로 움직이는가?";
+        when(openAIQuizClient.generateQuiz(
+                eq("겹치는기사"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
+                .thenReturn(Optional.of(quizDto(fresh)));
+
+        int generated = service.generateTodayQuizzes();
+
+        assertThat(generated).isEqualTo(1);
+        ArgumentCaptor<Quiz> savedQuiz = ArgumentCaptor.forClass(Quiz.class);
+        verify(quizRepository, times(1)).save(savedQuiz.capture());
+        assertThat(savedQuiz.getValue().getQuestion()).isEqualTo(fresh);
+    }
+
     private GeneratedQuizDto quizDto(String question, String keyword) throws Exception {
         return objectMapper.readValue("""
                 {
