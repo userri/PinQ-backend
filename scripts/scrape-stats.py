@@ -57,7 +57,8 @@ def main() -> int:
         hhmm = e.get("at", "")[11:16]
 
         # 성공 수는 회차 요약 라인에서 읽는다.
-        # 문항별 "퀴즈 생성 성공" INFO 는 링버퍼에 담기지 않는다(2026-08-12 확인) —
+        # 문항별 "퀴즈 생성 성공" INFO 는 버퍼에 안 담긴다 — 용량 문제가 아니라
+        # AuditLogBuffer.WATCHED 정규식에 "생성 완료"만 있고 "생성 성공"이 없어서다.
         # 그걸 세면 항상 0 이 나온다.
         if "완료. 성공=" in msg:
             got = int(msg.split("성공=")[1].split("/")[0])
@@ -73,8 +74,25 @@ def main() -> int:
         else:
             chunk.append(msg)
 
+    # 데이터 신뢰도 표시 — 버퍼가 잘렸으면 시도 횟수가 실제보다 적게 잡힌다.
+    #
+    # AuditLogBuffer 는 500칸 ArrayDeque 라 넘치면 **오래된 것부터** 조용히 사라진다.
+    # 밀려나는 쪽이 정기 06:04 회차라, 잘린 줄 모르고 읽으면 "재시도가 줄었다"로
+    # 오독하게 된다(관측 첫 주에 나올 수 있는 가장 나쁜 오해다).
+    # 첫 로그가 정기 생성 시각 이후면 그 앞이 날아갔다고 본다.
+    stamps = sorted(e.get("at", "") for e in logs if e.get("at"))
+    first = stamps[0][11:16] if stamps else None
+    row_flags = []
+    if len(logs) >= 480:                    # 500칸에 근접 = 넘쳤을 개연
+        row_flags.append("buffer_near_capacity")
+    if first and first > "06:00":           # 정기 회차가 통째로 없다
+        row_flags.append("missing_regular_run")
+
     row = {
         "date": date,
+        "log_entries": len(logs),
+        "first_log": first,
+        "flags": row_flags,                 # 비어 있어야 정상. 있으면 그날 수치는 하한값이다
         "published": {"regular": published["regular"], "backfill": published["backfill"]},
         "categories": {
             cat: {
