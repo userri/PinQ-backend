@@ -14,12 +14,20 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 
 ## 절차
 
+0. **먼저 origin 과 맞춘다 (판정 전, 읽기 전)**: 이 레포는 머신 여러 대에서 검수가 돌아 **체크아웃이 뒤처져 있는 게 정상 상태**다. 로그를 읽기 전에 최신화한다.
+
+   ```bash
+   git fetch origin && git status -sb && git log --oneline HEAD..origin/main
+   git pull --ff-only origin main
+   ```
+
+   빨리 감기가 안 되면(로컬에만 있는 커밋이 있으면) **거기서 멈추고 사람에게 보고한다** — 검수 로그는 append 전용이라 merge·rebase 로 섞을 물건이 아니다. 두 번 걸린 자리다: 2026-08-08 은 15커밋 뒤처진 채 낡은 `PENDING.md` 를 읽고 작업했고(push 거절로 뒤늦게 발견), 2026-08-12 는 5커밋 뒤처져 8/10·8/11 항목이 없는 로그에 8/12 를 붙일 뻔했다. 둘 다 우연히 잡혔다.
 1. **로그 부분 읽기 (전량 금지)**: `docs/quality-audit-log.md`의 **상단 판정 기준 섹션 + 최근 2~3개 일자 항목만** 읽는다 (Read offset/limit 또는 head+tail — 파일이 매일 자라므로 전량 읽기는 낭비). 추적 중인 관찰 카운트와 형식 파악이 목적.
 2. **오늘 발행분 조회**: 전용 스크립트 `~/bin/pinq-quiz-fetch.sh` 로 조회한다 (아래 "발행분 조회" 절 — **원시 ssh 금지**).
 3. **전수 판정**: 문항별로 질문·해설·keyword·선지 4지를 기준별로 판정.
 4. **치명 결함 원문 보존 (치명 판정이 하나라도 있을 때만)**: 로그 항목 안에 해당 문항의 **교정 전 question·choices 4지(정답 표시)·explanation·keyword 를 원문 그대로** 인용 블록으로 남긴다. 요약·재서술 금지 — 글자 그대로. 발견 시점에 남기지 않으면 사라진다 (8/4 id 400 이 수기 교정으로 소실돼 유일한 명백 결함의 회귀 검증 표본이 없었다). 형식은 아래 "기록 형식" 참조.
 5. **기록 append**: 기존 형식 그대로 로그에 항목 추가.
-6. **커밋 + push (항상 main, worktree 금지)**: 검수는 코드 변경이 없는 로그 append 이므로 **worktree 를 쓰지 말고 메인 레포(`/Users/iyr/SSAFY/PinQ-backend`, main 체크아웃)에서 직접 커밋·push** 한다 — cherry-pick 단계가 없어야 충돌이 원천 차단된다 (2026-07-23 스킬 파일 충돌 선례). `.md` 전용 push 는 CI 스킵. 만에 하나 worktree 세션이라면 [[quiz-audit-merge-to-main]] 절차로 폴백.
+6. **커밋 + push (항상 main, worktree 금지)**: 검수는 코드 변경이 없는 로그 append 이므로 **worktree 를 쓰지 말고 메인 레포(main 체크아웃)에서 직접 커밋·push** 한다 — cherry-pick 단계가 없어야 충돌이 원천 차단된다 (2026-07-23 스킬 파일 충돌 선례). `.md` 전용 push 는 CI 스킵. 만에 하나 worktree 세션이라면 [[quiz-audit-merge-to-main]] 절차로 폴백.
 7. **대기 작업 확인**: `docs/PENDING.md` 의 **`[검수]` 항목과 날짜가 박힌 항목**을 보고, 조건이 충족된 것("X 배포 후 Y" 류)이 있으면 사용자에게 보고한다. `[앱]`·`[문서]` 항목은 이 작업의 몫이 아니다 — 파일 전체를 읽지 않는다. 다단계 핸드오프의 복귀 트리거가 사람 기억뿐이라 후속 단계가 누락됐던 사고(7/23 목록 경량화 3단계) 재발 방지 장치.
 
 ## 발행분 조회 (전용 스크립트 — 원시 ssh 금지)
@@ -104,6 +112,7 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 
 | 실수 | 교정 |
 |---|---|
+| `pull` 없이 로그 append | 착수 전 `git pull --ff-only origin main` — 뒤처진 체크아웃에 붙이면 항목 순서가 깨지거나 push 가 거절된다(8/8·8/12 두 번) |
 | 원시 `ssh` 로 직접 조회 | `~/bin/pinq-quiz-fetch.sh` 사용 — 무인 실행이 권한 프롬프트에서 멈추고 쓰기까지 열린다 |
 | 테이블/컬럼명 추측 (`quiz_choice`, `is_correct`) | 쿼리를 손으로 쓰지 말 것 — 스크립트에 고정돼 있다 |
 | 자체 등급 체계 발명 (major/minor) | 치명/경계/관찰 3단계만 |
