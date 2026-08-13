@@ -32,17 +32,29 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuditLogBuffer extends AppenderBase<ILoggingEvent> {
 
-    /** 보관 개수. 하루 생성이 카테고리 5 × 후보 수 규모라 넉넉하다. */
-    private static final int CAPACITY = 500;
+    /**
+     * 보관 개수.
+     *
+     * 500 은 SKIP·폐기 줄만 담던 시절의 수치였고 8/12 에 이미 331/500 을 썼다.
+     * token-usage 를 받기 시작하면 LLM 호출 1건당 한 줄이 더 붙어 넘칠 여지가 커진다.
+     * 넘치면 오래된 것부터, 즉 정기 06:04 회차부터 조용히 밀려나 시도 횟수가 적게 잡힌다
+     * — 결손이 아니라 "적게 실패한 날"로 오독되는 게 이 버퍼의 가장 나쁜 실패 모드다.
+     * 문자열 한 줄짜리 엔트리라 3000 칸도 메모리 부담이 아니다.
+     */
+    private static final int CAPACITY = 3000;
 
     private static final String WATCHED_PACKAGE = "com.example.pinq_backend";
 
     /**
-     * 종전 {@code grep -iE "SKIP|건너뜀|폐기|검증 실패|생성 완료|백필|중복"} 과 같은 집합.
-     * 여기를 넓히면 무관한 로그가 섞여 검수자가 신호를 놓친다.
+     * 종전 {@code grep -iE "SKIP|건너뜀|폐기|검증 실패|생성 완료|백필|중복"} 과 같은 집합에
+     * {@code token-usage} 를 더한 것. 여기를 더 넓히면 무관한 로그가 섞여 검수자가 신호를 놓친다.
+     *
+     * token-usage 를 넣은 이유: 이 회선은 아웃바운드 22 가 막혀 {@code docker logs} 로 갈 수 없어
+     * 이 버퍼가 유일한 관측 창이다. 8/13 프롬프트 캐싱 배포 직후 cache_read 를 확인하려다
+     * 문구가 안 걸려 계측 자체가 불가능했다 — 계측 수단을 배포하고 볼 수 없으면 없는 것과 같다.
      */
     private static final Pattern WATCHED = Pattern.compile(
-            "SKIP|건너뜀|폐기|검증 실패|생성 완료|백필|중복", Pattern.CASE_INSENSITIVE);
+            "SKIP|건너뜀|폐기|검증 실패|생성 완료|백필|중복|token-usage", Pattern.CASE_INSENSITIVE);
 
     private final Deque<Entry> entries = new ArrayDeque<>(CAPACITY);
     private final Clock clock;

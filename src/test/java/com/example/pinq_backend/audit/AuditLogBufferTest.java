@@ -59,12 +59,27 @@ class AuditLogBufferTest {
     @Test
     @DisplayName("보관 한도를 넘으면 오래된 것부터 버린다")
     void evictsOldestBeyondCapacity() {
-        for (int i = 0; i < 600; i++) {
+        for (int i = 0; i < 3100; i++) {
             WATCHED_LOGGER.info("퀴즈 생성 완료. seq={}", i);
         }
 
         var entries = buffer.recent(1, null);
-        assertThat(entries).hasSize(500);
+        assertThat(entries).hasSize(3000);
         assertThat(entries.get(0).message()).isEqualTo("퀴즈 생성 완료. seq=100");
+    }
+
+    /**
+     * 이 회선은 아웃바운드 22 가 막혀 docker logs 를 못 본다 — 이 버퍼에 안 걸리는 로그는
+     * 프로덕션에서 존재하지 않는 것과 같다. 프롬프트 캐싱 성과(cache_read)가 그 경로로만 보인다.
+     */
+    @Test
+    @DisplayName("token-usage 줄은 조회 대상이다 — 캐시 성과의 유일한 관측 창")
+    void capturesTokenUsage() {
+        WATCHED_LOGGER.info("token-usage kind=verify prompt=900 completion=120 "
+                + "cache_write=0 cache_read=5200 total=6220");
+
+        assertThat(buffer.recent(1, null))
+                .extracting(AuditLogBuffer.Entry::message)
+                .anySatisfy(m -> assertThat(m).contains("cache_read=5200"));
     }
 }
