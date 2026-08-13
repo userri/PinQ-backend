@@ -42,7 +42,12 @@ def main() -> int:
         print("usage: scrape-stats.py YYYY-MM-DD < logs.json", file=sys.stderr)
         return 2
     date = sys.argv[1]
-    logs = json.load(sys.stdin)
+    # stdin/stdout 을 명시적으로 utf-8 로 고정한다.
+    # Windows 기본 인코딩(cp949)으로 읽으면 한글이 깨져 사유 분류가 통째로
+    # 빗나가는데, 예외 없이 categories={} 인 정상처럼 보이는 행이 나온다.
+    # 2026-08-13 회차에서 실제로 그 행을 만들 뻔했다.
+    sys.stdout.reconfigure(encoding="utf-8")
+    logs = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
 
     tries = defaultdict(list)                       # category → [title, ...]
     reasons = defaultdict(Counter)                  # category → 사유 카운터
@@ -80,12 +85,14 @@ def main() -> int:
     # 밀려나는 쪽이 정기 06:04 회차라, 잘린 줄 모르고 읽으면 "재시도가 줄었다"로
     # 오독하게 된다(관측 첫 주에 나올 수 있는 가장 나쁜 오해다).
     # 첫 로그가 정기 생성 시각 이후면 그 앞이 날아갔다고 본다.
-    stamps = sorted(e.get("at", "") for e in logs if e.get("at"))
+    # 조회 창(기본 30h)이 전날을 포함하므로 **그날치 로그**의 첫 시각만 본다.
+    # 전체 첫 시각을 쓰면 전날 늦은 항목이 잡혀 정상인 날에도 플래그가 선다.
+    stamps = sorted(e["at"] for e in logs if e.get("at", "").startswith(date))
     first = stamps[0][11:16] if stamps else None
     row_flags = []
     if len(logs) >= 480:                    # 500칸에 근접 = 넘쳤을 개연
         row_flags.append("buffer_near_capacity")
-    if first and first > "06:00":           # 정기 회차가 통째로 없다
+    if not first or first > "06:00":        # 정기 회차가 통째로 없다
         row_flags.append("missing_regular_run")
 
     row = {
