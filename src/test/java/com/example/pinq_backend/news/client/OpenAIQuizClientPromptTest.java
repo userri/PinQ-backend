@@ -73,10 +73,11 @@ class OpenAIQuizClientPromptTest {
     @EnumSource(Category.class)
     @DisplayName("검증 프롬프트: 카테고리 자리엔 카테고리가, 룰북 자리엔 룰북이 들어간다")
     void verifyPrompt_placesCategoryAndRulebookInTheirOwnSlots(Category category) {
-        String prompt = OpenAIQuizClient.verifyPrompt(sampleQuiz(), category, null, null);
+        String user = OpenAIQuizClient.verifyPrompt(sampleQuiz(), category, null, null);
+        String system = OpenAIQuizClient.verifySystemPrompt();
 
-        String categorySlot = between(prompt, "이 문항이 배정된 카테고리:", "경제 인과 룰북");
-        String rulebookSlot = between(prompt, "경제 인과 룰북 (방향 판정의 절대 기준):", "문제:");
+        String categorySlot = between(user, "이 문항이 배정된 카테고리:", "문제:");
+        String rulebookSlot = between(system, "경제 인과 룰북 (방향 판정의 절대 기준):", "검증 기준:");
 
         // 카테고리 자리 — 카테고리명 한 줄이지, 룰북이 통째로 들어오면 안 된다
         assertThat(categorySlot)
@@ -90,6 +91,36 @@ class OpenAIQuizClientPromptTest {
         assertThat(rulebookSlot.length()).isGreaterThan(200);
     }
 
+    /**
+     * 프롬프트 캐싱의 전제 — 고정부는 어떤 인자에도 의존하지 않아야 한다.
+     * 한 글자라도 문항·카테고리를 타면 접두가 매 호출 달라져 캐시가 통째로 무력화된다
+     * (오류가 아니라 조용한 비용 증가로 나타나므로 테스트로 고정한다).
+     */
+    @Test
+    @DisplayName("검증 지시문(고정부)은 문항·카테고리와 무관하게 항상 같은 텍스트다")
+    void verifySystemPrompt_isInvariant() {
+        String baseline = OpenAIQuizClient.verifySystemPrompt();
+
+        assertThat(baseline)
+                .contains("경제 인과 룰북 (방향 판정의 절대 기준):")
+                .contains("검증 기준:")
+                .contains("16. 문항의 핵심 소재가")
+                .contains("JSON만 반환하고");
+
+        // 고정부에는 문항 값이 새어 들어오면 안 된다
+        assertThat(baseline)
+                .doesNotContain("표본 질문")
+                .doesNotContain("표본 해설")
+                .doesNotContain("표본 용어");
+
+        // 카테고리별로 조립해도 고정부는 한 글자도 달라지지 않는다.
+        // (기준 16 의 예시에 STOCK·REAL_ESTATE 가 상수로 등장하므로 카테고리명 부재는 보지 않는다)
+        for (Category category : Category.values()) {
+            OpenAIQuizClient.verifyPrompt(sampleQuiz(), category, null, null);
+            assertThat(OpenAIQuizClient.verifySystemPrompt()).isEqualTo(baseline);
+        }
+    }
+
     @Test
     @DisplayName("검증 프롬프트: 문항 필드가 각자 제 자리에 들어간다")
     void verifyPrompt_placesQuizFieldsInTheirOwnSlots() {
@@ -99,7 +130,7 @@ class OpenAIQuizClientPromptTest {
         assertThat(between(prompt, "문제:", "전체 보기:")).contains("표본 질문");
         assertThat(between(prompt, "정답으로 표시된 보기:", "해설:")).contains("정답 보기");
         assertThat(between(prompt, "해설:", "핵심 용어(keyword):")).contains("표본 해설");
-        assertThat(between(prompt, "핵심 용어(keyword):", "검증 기준:")).contains("표본 용어");
+        assertThat(prompt.substring(prompt.indexOf("핵심 용어(keyword):"))).contains("표본 용어");
     }
 
     /** 두 라벨 사이의 값 구간. 라벨이 없으면 테스트가 의미를 잃으므로 즉시 실패시킨다. */

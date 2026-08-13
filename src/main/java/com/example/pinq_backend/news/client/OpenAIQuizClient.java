@@ -223,7 +223,7 @@ public class OpenAIQuizClient {
 
         // Anthropic Claude로 cross-model 검증 위임.
         // HTTP 호출/응답 파싱/fail-open 정책은 AnthropicVerifyClient가 캡슐화한다.
-        boolean valid = anthropicVerifyClient.verify(verifyPrompt, verifyModelOverride);
+        boolean valid = anthropicVerifyClient.verify(verifySystemPrompt(), verifyPrompt, verifyModelOverride);
         return handleVerifyResult(valid, quiz);
     }
 
@@ -274,7 +274,9 @@ public class OpenAIQuizClient {
         String recentQuestionsSection = "";
         if (recentQuestions != null && !recentQuestions.isEmpty()) {
             duplicationCriterion = """
-                    8. 아래 "최근 출제 문제 목록"의 어떤 문항과라도 표현만 다를 뿐
+
+                    추가 검증 기준 (지시문의 1~16 과 함께 적용):
+                    17. 아래 "최근 출제 문제 목록"의 어떤 문항과라도 표현만 다를 뿐
                        사실상 같은 개념·같은 인과를 묻는 중복 문제면 valid는 false입니다.
                        (각 항목 맨 앞 [대괄호]는 그 문항의 핵심 소재 — 같은 소재를
                         각도만 바꿔 다시 묻는 것도 중복입니다.)
@@ -287,13 +289,7 @@ public class OpenAIQuizClient {
         }
 
         return """
-                다음 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
-                아래 "경제 인과 룰북"과 경제 지식, 그리고 제공된 정보만으로 판단하세요.
-
                 이 문항이 배정된 카테고리: %s
-
-                경제 인과 룰북 (방향 판정의 절대 기준):
-                %s
 
                 문제: %s
 
@@ -305,6 +301,37 @@ public class OpenAIQuizClient {
                 해설: %s
 
                 핵심 용어(keyword): %s
+                %s%s%s"""
+                // ⚠️ 인자 순서 = 템플릿의 %s 등장 순서.
+                // 2026-08-04 기준 16 채택(4140dd5)에서 새 %s 를 룰북 앞에 넣고 인자는 뒤에 붙여
+                // 둘이 어긋난 채 8일간 발행됐다 — 검증기가 "배정된 카테고리" 자리에서 룰북 전문을,
+                // "인과 룰북" 자리에서 카테고리명 한 단어를 읽었다(8/12 발견).
+                // %s 를 새로 추가할 때는 OpenAIQuizClientPromptTest 의 자리 검증이 함께 깨진다.
+                .formatted(categoryLabel, quiz.getQuestion(), choicesText, answerContent,
+                        nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
+                        duplicationCriterion, recentQuestionsSection, experimentalCriteria);
+    }
+
+    /**
+     * 검증 프롬프트의 고정부 — 문항과 무관하게 항상 같은 텍스트다.
+     *
+     * 분리 이유는 프롬프트 캐싱이다. 캐시는 접두 일치라 고정부가 프롬프트 **앞**에
+     * 연속으로 놓여야 하는데, 종전 구조는 [지시문·룰북] → [문항] → [검증 기준] 으로
+     * 고정부가 문항을 사이에 두고 갈라져 있어 캐시가 걸릴 자리가 없었다.
+     * 이 메서드의 반환값은 어떤 인자에도 의존하지 않는다 — 그것이 캐시 적중의 전제이고,
+     * 테스트가 그 불변을 고정한다.
+     *
+     * 위치 이동에 따라 문구 두 곳만 바꿨다: 문항이 뒤로 갔으므로 "제공된 정보"의 위치를
+     * 명시하고, 기준 16 의 "위 배정된 카테고리"를 "아래" 로 고쳤다. 나머지는 종전 그대로다.
+     */
+    static String verifySystemPrompt() {
+        return """
+                아래 경제 퀴즈가 객관식 문항으로서 유효한지 판단하세요.
+                이 지시문의 "경제 인과 룰북"과 경제 지식, 그리고 사용자 메시지로 제공된
+                정보만으로 판단하세요.
+
+                경제 인과 룰북 (방향 판정의 절대 기준):
+                %s
 
                 검증 기준:
                 1. 전체 보기 중 경제학 교과서 기준으로 의미상 명확히 옳은 보기가 정확히 하나여야 합니다.
@@ -348,24 +375,16 @@ public class OpenAIQuizClient {
                 15. 질문의 의문 초점(이유·차이·메커니즘·결과)과 정답의 내용이 정확히
                     대응하는지 확인하세요. 질문이 A를 묻는데 정답이 참이지만 다른 B를
                     서술하면 valid는 false입니다.
-                16. 문항의 핵심 소재가 위 "배정된 카테고리" 도메인에 속하지 않고, 그 카테고리의
+                16. 문항의 핵심 소재가 아래 사용자 메시지의 "배정된 카테고리" 도메인에 속하지 않고, 그 카테고리의
                     개념·메커니즘으로 연결하는 다리도 문항 안에 없을 때에만 valid는 false입니다.
                     해당 시장·자산·정책 대상이 그 카테고리에 속하면(예: 주식시장의 거래 기법은
                     STOCK, 부동산 보유세는 REAL_ESTATE) 소재가 세부 분야이더라도 정합으로 봅니다.
                     판단이 애매하면 통과시키세요 — 이 기준은 명백한 이탈만 걸러냅니다.
-                %s%s%s
+
                 위 기준을 모두 만족하면 {"valid": true},
                 만족하지 않으면 {"valid": false, "reason": "이유"} 를 반환하세요.
                 JSON만 반환하고 다른 텍스트는 금지입니다.
-                """
-                // ⚠️ 인자 순서 = 템플릿의 %s 등장 순서. 카테고리가 룰북보다 **앞**에 나온다.
-                // 2026-08-04 기준 16 채택(4140dd5)에서 새 %s 를 룰북 앞에 넣고 인자는 뒤에 붙여
-                // 둘이 어긋난 채 8일간 발행됐다 — 검증기가 "배정된 카테고리" 자리에서 룰북 전문을,
-                // "인과 룰북" 자리에서 카테고리명 한 단어를 읽었다(8/12 발견).
-                // %s 를 새로 추가할 때는 OpenAIQuizClientPromptTest 의 자리 검증이 함께 깨진다.
-                .formatted(categoryLabel, CAUSAL_RULEBOOK, quiz.getQuestion(), choicesText, answerContent,
-                        nullToEmpty(quiz.getExplanation()), nullToEmpty(quiz.getKeyword()),
-                        duplicationCriterion, recentQuestionsSection, experimentalCriteria);
+                """.formatted(CAUSAL_RULEBOOK);
     }
 
     /** 검증 결과 로깅 — 폐기 사유가 로그에만 남으므로 호출부에서 분리해 둔다. */

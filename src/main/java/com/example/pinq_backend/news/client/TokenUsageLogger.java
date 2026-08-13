@@ -21,8 +21,15 @@ final class TokenUsageLogger {
         int completion = usage.path("completion_tokens").asInt(usage.path("output_tokens").asInt(-1));
         if (prompt < 0 || completion < 0) return null;
 
-        int total = usage.path("total_tokens").asInt(prompt + completion);
-        return "token-usage kind=%s prompt=%d completion=%d total=%d"
-                .formatted(kind, prompt, completion, total);
+        // 캐시 항목은 Anthropic 에만 있다. 없으면 0 — 캐싱 전후 비교의 기준선이 되도록
+        // 항상 찍는다(필드가 사라졌다 나타났다 하면 로그 집계가 갈린다).
+        int cacheWrite = usage.path("cache_creation_input_tokens").asInt(0);
+        int cacheRead = usage.path("cache_read_input_tokens").asInt(0);
+
+        // prompt(=input_tokens)는 캐시에 걸리지 않은 잔여분만 센다. 실제 프롬프트 크기는
+        // prompt + cache_write + cache_read 다 — total 을 이 합으로 잡아야 종전 로그와 비교된다.
+        int total = usage.path("total_tokens").asInt(prompt + completion + cacheWrite + cacheRead);
+        return "token-usage kind=%s prompt=%d completion=%d cache_write=%d cache_read=%d total=%d"
+                .formatted(kind, prompt, completion, cacheWrite, cacheRead, total);
     }
 }

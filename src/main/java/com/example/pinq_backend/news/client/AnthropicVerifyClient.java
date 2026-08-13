@@ -58,24 +58,34 @@ public class AnthropicVerifyClient {
      * 프롬프트는 OpenAIQuizClient.verifyAnswer()에서 이미 완성된 형태로 전달받으며,
      * 응답은 {"valid": true/false, "reason"?: "..."} JSON이어야 한다.
      *
-     * @param verifyPrompt 검증 지시 + 퀴즈 정보가 포함된 사용자 프롬프트
+     * @param systemPrompt 문항과 무관한 고정부(룰북 + 검증 기준). 캐싱 대상이라 호출마다 같아야 한다
+     * @param verifyPrompt 퀴즈 정보가 담긴 가변부 사용자 프롬프트
      * @return true면 정답 신뢰 가능 또는 검증 호출 실패(fail-open), false면 폐기 대상
      */
-    public boolean verify(String verifyPrompt) {
-        return verify(verifyPrompt, null);
+    public boolean verify(String systemPrompt, String verifyPrompt) {
+        return verify(systemPrompt, verifyPrompt, null);
     }
 
     /** 검증 모델 A/B 실험용 오버로드 — modelOverride null 이면 운영 기본 모델. */
-    public boolean verify(String verifyPrompt, String modelOverride) {
+    public boolean verify(String systemPrompt, String verifyPrompt, String modelOverride) {
         // API 키 미설정 시 불필요한 HTTP 호출 없이 즉시 fail-open 반환.
         // 경고는 생성자에서 1회 출력하므로 여기서는 별도 로그 없이 통과.
         if (props.apiKey() == null || props.apiKey().isBlank()) {
             return true;
         }
 
+        // system 은 문항과 무관한 고정부(룰북 + 검증 기준)다. cache_control 을 걸어
+        // 프롬프트 캐싱을 받는다 — 접두 일치라 고정부가 앞에 연속으로 놓여야 하고,
+        // 그 배치는 OpenAIQuizClient.verifySystemPrompt() 가 보장한다.
+        // 기본 TTL 5분이라 06:00~06:05 정기 버스트에는 먹지만 백필은 새로 쓴다.
         Map<String, Object> requestBody = Map.of(
                 "model", (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : props.model(),
                 "max_tokens", MAX_TOKENS,
+                "system", List.of(Map.of(
+                        "type", "text",
+                        "text", systemPrompt,
+                        "cache_control", Map.of("type", "ephemeral")
+                )),
                 "messages", List.of(
                         Map.of("role", "user", "content", verifyPrompt)
                 )
