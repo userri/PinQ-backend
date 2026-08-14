@@ -1,5 +1,6 @@
 package com.example.pinq_backend.news.client;
 
+import com.example.pinq_backend.audit.TokenUsageRecorder;
 import com.example.pinq_backend.config.properties.AnthropicProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,10 +38,13 @@ public class AnthropicVerifyClient {
     private final RestClient restClient;
     private final AnthropicProperties props;
     private final ObjectMapper objectMapper;
+    private final TokenUsageRecorder tokenUsageRecorder;
 
-    public AnthropicVerifyClient(AnthropicProperties props, ObjectMapper objectMapper) {
+    public AnthropicVerifyClient(AnthropicProperties props, ObjectMapper objectMapper,
+                                TokenUsageRecorder tokenUsageRecorder) {
         this.props = props;
         this.objectMapper = objectMapper;
+        this.tokenUsageRecorder = tokenUsageRecorder;
         this.restClient = RestClient.builder()
                 .defaultHeader("x-api-key", props.apiKey())
                 .defaultHeader("anthropic-version", ANTHROPIC_VERSION)
@@ -100,9 +104,15 @@ public class AnthropicVerifyClient {
 
             JsonNode root = objectMapper.readTree(rawResponse);
 
-            // 토큰 사용량 계측 (axis 실험 0단계 기준선). usage 가 없으면 조용히 생략.
-            String usageLine = TokenUsageLogger.format("verify", root);
-            if (usageLine != null) log.info(usageLine);
+            // 토큰 사용량 계측. usage 가 없으면 조용히 생략.
+            // 로그 한 줄(실시간 확인) + 테이블 1행(날짜 간 비교) 둘 다 남긴다 — 로그는
+            // 링버퍼라 재시작하면 사라지므로 로그만으로는 어제와 비교할 수 없다.
+            TokenUsageLogger.Usage usage = TokenUsageLogger.parse("verify", root);
+            if (usage != null) {
+                log.info(TokenUsageLogger.line(usage));
+                tokenUsageRecorder.record("verify", usage.model(), usage.prompt(), usage.completion(),
+                        usage.cacheWrite(), usage.cacheRead(), usage.total());
+            }
 
             // Anthropic 응답 구조: { "content": [ { "type": "text", "text": "..." } ], ... }
             // OpenAI(choices[0].message.content)와 위치가 다르므로 주의.

@@ -1,6 +1,7 @@
 package com.example.pinq_backend.news.client;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.audit.TokenUsageRecorder;
 import com.example.pinq_backend.config.properties.OpenAIProperties;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -66,17 +67,20 @@ public class OpenAIQuizClient {
     private final ObjectMapper objectMapper;
     private final AnthropicVerifyClient anthropicVerifyClient;
     private final QuizRuleValidator ruleValidator;
+    private final TokenUsageRecorder tokenUsageRecorder;
 
     public OpenAIQuizClient(
             OpenAIProperties props,
             ObjectMapper objectMapper,
             AnthropicVerifyClient anthropicVerifyClient,
-            QuizRuleValidator ruleValidator
+            QuizRuleValidator ruleValidator,
+            TokenUsageRecorder tokenUsageRecorder
     ) {
         this.props = props;
         this.objectMapper = objectMapper;
         this.anthropicVerifyClient = anthropicVerifyClient;
         this.ruleValidator = ruleValidator;
+        this.tokenUsageRecorder = tokenUsageRecorder;
         this.restClient = RestClient.builder()
                 .defaultHeader("Authorization", "Bearer " + props.apiKey())
                 .defaultHeader("Content-Type", "application/json")
@@ -470,8 +474,12 @@ public class OpenAIQuizClient {
     /** 응답 usage 를 로그로 남긴다. 파싱 실패는 무시 — 계측이 본 기능을 깨면 안 된다. */
     private void logTokenUsage(String kind, String rawResponse) {
         try {
-            String line = TokenUsageLogger.format(kind, objectMapper.readTree(rawResponse));
-            if (line != null) log.info(line);
+            TokenUsageLogger.Usage usage = TokenUsageLogger.parse(kind, objectMapper.readTree(rawResponse));
+            if (usage != null) {
+                log.info(TokenUsageLogger.line(usage));
+                tokenUsageRecorder.record(kind, usage.model(), usage.prompt(), usage.completion(),
+                        usage.cacheWrite(), usage.cacheRead(), usage.total());
+            }
         } catch (Exception e) {
             log.debug("token-usage 파싱 실패. kind={}", kind, e);
         }

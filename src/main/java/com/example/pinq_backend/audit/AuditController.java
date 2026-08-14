@@ -2,6 +2,7 @@ package com.example.pinq_backend.audit;
 
 import ch.qos.logback.classic.Level;
 import com.example.pinq_backend.audit.dto.AuditQuizResponse;
+import com.example.pinq_backend.audit.repository.TokenUsageRepository;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -32,9 +33,11 @@ public class AuditController {
 
     private static final int MAX_COUNT_DAYS = 90;
     private static final int MAX_LOG_HOURS = 168;
+    private static final int MAX_TOKEN_DAYS = 90;
 
     private final QuizRepository quizRepository;
     private final AuditLogBuffer auditLogBuffer;
+    private final TokenUsageRepository tokenUsageRepository;
     private final Clock clock;
 
     /**
@@ -76,6 +79,23 @@ public class AuditController {
     ) {
         Level minLevel = level == null || level.isBlank() ? null : Level.toLevel(level, Level.TRACE);
         return auditLogBuffer.recent(clamp(hours, 1, MAX_LOG_HOURS), minLevel);
+    }
+
+    /**
+     * 날짜 × kind(generate/verify) 토큰 사용량 롤업.
+     *
+     * 로그({@code /logs})의 {@code token-usage} 줄과 같은 값이지만 이쪽은 <b>DB 라 재시작에도 남는다</b>.
+     * 로그만 있던 동안은 배포할 때마다 계측이 사라져 어제와 비교할 수 없었다(2026-08-14 결정).
+     *
+     * 캐싱 성과는 {@code cacheHits/calls} 로 본다 — {@code promptTokens} 합은 캐시가 먹으면
+     * 당연히 줄어들어 절감으로 오독된다.
+     */
+    @GetMapping("/token-usage")
+    public List<TokenUsageRepository.DailyRow> tokenUsage(
+        @RequestParam(name = "days", defaultValue = "30") int days
+    ) {
+        int window = clamp(days, 1, MAX_TOKEN_DAYS);
+        return tokenUsageRepository.rollupSince(LocalDate.now(clock).minusDays(window - 1L));
     }
 
     private static int clamp(int value, int min, int max) {

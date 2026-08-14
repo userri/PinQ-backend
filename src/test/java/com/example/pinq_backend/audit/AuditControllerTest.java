@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.audit.repository.TokenUsageRepository;
 import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.quiz.domain.Choice;
 import com.example.pinq_backend.quiz.domain.Quiz;
@@ -64,6 +65,9 @@ class AuditControllerTest {
 
     @MockitoBean
     private AuditLogBuffer auditLogBuffer;
+
+    @MockitoBean
+    private TokenUsageRepository tokenUsageRepository;
 
     @MockitoBean
     private UserService userService;

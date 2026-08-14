@@ -8,8 +8,10 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 ## Overview
 
 발행분(정상 = 카테고리 5문항)을 전수 검수하고 `docs/quality-audit-log.md`에 기록하는 루틴.
-**2026-08-08 부터 주 3회(월·수·금) 점감 체제** — 실행일 사이 날짜는 백필 검수하며 이는 공백 사고가
-아니라 정상 운영이다(제목에 "— 백필 검수(점감 체제)"). 치명 결함 재출현 시 매일 체제 복귀를 제안한다.
+**2026-08-14 부터 매일 체제로 복귀했다** — 8/8~8/14 는 주 3회(월·수·금) 점감 체제였으나,
+8/14 발행분에서 치명 2건(450 정답 방향 오류·453 전제-정답 모순)이 나와 이 스킬의 복귀 조항이 발동했다.
+따라서 빠진 날짜는 정상 운영이 아니라 결손이며 백필 검수로 메운다(제목에 "— 백필 검수").
+치명 0 이 다시 쌓인 뒤의 점감 재제안은 사용자 판단이다.
 판정 기준·기록 형식의 원천(SSOT)은 **audit 로그 상단의 "판정 기준" 섹션과 기존 일자별 항목** — 이 스킬은 절차 안내이며, 판정 전 반드시 로그 원문과 대조한다.
 
 ## 절차
@@ -62,6 +64,8 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 ~/bin/pinq-quiz-fetch.sh quizzes 2026-08-01   # 특정 날짜 (백필 검수용)
 ~/bin/pinq-quiz-fetch.sh logs                 # 생성 로그의 SKIP·실패 사유 (기본 30h)
 ~/bin/pinq-quiz-fetch.sh counts               # 최근 10일 발행 수·id 범위
+~/bin/pinq-quiz-fetch.sh tokens 30            # 날짜×kind 토큰 사용량 (DB — 재시작에도 남는다)
+~/bin/pinq-quiz-fetch.sh tokens 30            # 날짜×kind 토큰 사용량 (DB — 재시작에도 남는다)
 ```
 
 - 접속 정보(프로덕션 주소·admin 시크릿)는 스크립트와 로컬 설정에만 있다 — **이 파일에 하드코딩 금지**(공개 레포).
@@ -90,6 +94,7 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 - [ ] 같은 소재 재등장 간격 (예: 레버리지 ETF) — 재등장 시 이력 주입 포맷 개선 실험 트리거
 - [ ] 해설 정합 누수 (검증 기준 4) — 명백 사례 반복 시 기준 강화 실험 트리거
 - [ ] keyword "용어: 정의" 형식 준수 (나열형·주제 서술형이면 룰베이스 누수)
+- [ ] 토큰 사용량 — `tokens` 서브커맨드로 kind별 합과 **cache_read 회차 비율** 확인 (prompt 합 감소를 절감으로 읽지 말 것)
 - [ ] 정답률 대시보드 밴드(55~75%) 이탈 여부 (로그 최근 항목의 추적 문맥 참조)
 
 ## 기록 형식
