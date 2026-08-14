@@ -713,3 +713,96 @@ go 기준: 엔화 4건(385·390·395·410) 중 3건 이상 동일 라벨, 2회 �
 2회 판정(둘 다 통과해야 발행)의 추가 비용은 종전 1회보다도 싸다. 다만 **단발 사례로 룰을 바꾸지
 않는다는 원칙대로 실험 대상으로만 올린다** — 발행 수 직격(마른 슬롯 4/5) 위험이 붙고,
 위양성이 줄어드는 만큼 위음성(멀쩡한 문항 폐기)도 같이 재야 한다. 표본은 오늘 5문항 × 4회가 전부다.
+
+#### 원문 보존 — 8/14 token-usage 원시 로그 (배포 전 회수, 75행)
+
+`token_usage` 테이블은 **배포 이후부터만 찬다.** 배포하는 행위 자체가 링버퍼를 비우므로,
+그 전에 오늘치를 여기 옮겨 둔다 — 8/8 계측 도입 이후 유일하게 원시 행 단위로 남는 날이다.
+집계가 아니라 원문이라는 점이 중요하다: 나중에 요금과 대조하거나 회차 안 분포를 다시 보려면
+합계가 아니라 이 75행이 있어야 한다.
+
+**정기 06:00:09~06:03:44** — generate 46회(prompt 286,119 / completion 13,311 / total 299,430,
+캐시 대상 아님), verify 12회(prompt 44,294 / completion 1,440 / cache_write 2,798 /
+cache_read 30,778 / total 79,310, **cache_read>0 이 11회**).
+**오후 재투입 10:24:27~10:25:38** — verify 17회(450·453 확인 2회 + 5문항×3회 재현성 측정 15회.
+prompt 10,574 / cache_write 2,798 / cache_read 44,768 / total 59,688, cache_read>0 이 16회).
+재투입이 write 를 한 번 더 쓴 것은 TTL 5분이 지나 캐시가 만료됐기 때문이다 — 정기 버스트와
+별개 회차로 센다.
+
+```text
+2026-08-14T06:00:09  token-usage kind=generate prompt=5410 completion=89 cache_write=0 cache_read=0 total=5499
+2026-08-14T06:00:10  token-usage kind=generate prompt=5401 completion=82 cache_write=0 cache_read=0 total=5483
+2026-08-14T06:00:14  token-usage kind=generate prompt=5826 completion=73 cache_write=0 cache_read=0 total=5899
+2026-08-14T06:00:18  token-usage kind=generate prompt=6356 completion=443 cache_write=0 cache_read=0 total=6799
+2026-08-14T06:00:21  token-usage kind=verify prompt=3400 completion=105 cache_write=2798 cache_read=0 total=6303
+2026-08-14T06:00:25  token-usage kind=generate prompt=6414 completion=420 cache_write=0 cache_read=0 total=6834
+2026-08-14T06:00:29  token-usage kind=generate prompt=6520 completion=365 cache_write=0 cache_read=0 total=6885
+2026-08-14T06:00:31  token-usage kind=generate prompt=5387 completion=107 cache_write=0 cache_read=0 total=5494
+2026-08-14T06:00:33  token-usage kind=generate prompt=6075 completion=90 cache_write=0 cache_read=0 total=6165
+2026-08-14T06:00:38  token-usage kind=generate prompt=5989 completion=449 cache_write=0 cache_read=0 total=6438
+2026-08-14T06:00:41  token-usage kind=verify prompt=3391 completion=135 cache_write=0 cache_read=2798 total=6324
+2026-08-14T06:00:43  token-usage kind=generate prompt=5378 completion=86 cache_write=0 cache_read=0 total=5464
+2026-08-14T06:00:44  token-usage kind=generate prompt=5380 completion=77 cache_write=0 cache_read=0 total=5457
+2026-08-14T06:00:46  token-usage kind=generate prompt=5386 completion=79 cache_write=0 cache_read=0 total=5465
+2026-08-14T06:00:47  token-usage kind=generate prompt=6284 completion=60 cache_write=0 cache_read=0 total=6344
+2026-08-14T06:00:52  token-usage kind=generate prompt=6473 completion=400 cache_write=0 cache_read=0 total=6873
+2026-08-14T06:00:56  token-usage kind=generate prompt=6368 completion=402 cache_write=0 cache_read=0 total=6770
+2026-08-14T06:01:04  token-usage kind=verify prompt=3268 completion=256 cache_write=0 cache_read=2798 total=6322
+2026-08-14T06:01:06  token-usage kind=generate prompt=6367 completion=70 cache_write=0 cache_read=0 total=6437
+2026-08-14T06:01:08  token-usage kind=generate prompt=5638 completion=103 cache_write=0 cache_read=0 total=5741
+2026-08-14T06:01:12  token-usage kind=generate prompt=6526 completion=369 cache_write=0 cache_read=0 total=6895
+2026-08-14T06:01:17  token-usage kind=verify prompt=3653 completion=152 cache_write=0 cache_read=2798 total=6603
+2026-08-14T06:01:19  token-usage kind=generate prompt=5637 completion=100 cache_write=0 cache_read=0 total=5737
+2026-08-14T06:01:20  token-usage kind=generate prompt=5638 completion=56 cache_write=0 cache_read=0 total=5694
+2026-08-14T06:01:25  token-usage kind=generate prompt=5644 completion=374 cache_write=0 cache_read=0 total=6018
+2026-08-14T06:01:31  token-usage kind=verify prompt=3641 completion=256 cache_write=0 cache_read=2798 total=6695
+2026-08-14T06:01:36  token-usage kind=generate prompt=5643 completion=390 cache_write=0 cache_read=0 total=6033
+2026-08-14T06:01:43  token-usage kind=verify prompt=3642 completion=9 cache_write=0 cache_read=2798 total=6449
+2026-08-14T06:01:50  token-usage kind=generate prompt=5602 completion=359 cache_write=0 cache_read=0 total=5961
+2026-08-14T06:01:55  token-usage kind=generate prompt=6520 completion=460 cache_write=0 cache_read=0 total=6980
+2026-08-14T06:01:58  token-usage kind=generate prompt=6868 completion=381 cache_write=0 cache_read=0 total=7249
+2026-08-14T06:02:03  token-usage kind=generate prompt=6495 completion=444 cache_write=0 cache_read=0 total=6939
+2026-08-14T06:02:09  token-usage kind=verify prompt=3790 completion=140 cache_write=0 cache_read=2798 total=6728
+2026-08-14T06:02:13  token-usage kind=generate prompt=6540 completion=413 cache_write=0 cache_read=0 total=6953
+2026-08-14T06:02:17  token-usage kind=generate prompt=6342 completion=469 cache_write=0 cache_read=0 total=6811
+2026-08-14T06:02:19  token-usage kind=generate prompt=6816 completion=54 cache_write=0 cache_read=0 total=6870
+2026-08-14T06:02:20  token-usage kind=generate prompt=5619 completion=70 cache_write=0 cache_read=0 total=5689
+2026-08-14T06:02:25  token-usage kind=generate prompt=6728 completion=432 cache_write=0 cache_read=0 total=7160
+2026-08-14T06:02:26  token-usage kind=generate prompt=6262 completion=59 cache_write=0 cache_read=0 total=6321
+2026-08-14T06:02:31  token-usage kind=generate prompt=6793 completion=402 cache_write=0 cache_read=0 total=7195
+2026-08-14T06:02:33  token-usage kind=verify prompt=3688 completion=9 cache_write=0 cache_read=2798 total=6495
+2026-08-14T06:02:34  token-usage kind=generate prompt=7017 completion=62 cache_write=0 cache_read=0 total=7079
+2026-08-14T06:02:39  token-usage kind=generate prompt=6996 completion=477 cache_write=0 cache_read=0 total=7473
+2026-08-14T06:02:46  token-usage kind=verify prompt=3961 completion=227 cache_write=0 cache_read=2798 total=6986
+2026-08-14T06:02:51  token-usage kind=generate prompt=6932 completion=491 cache_write=0 cache_read=0 total=7423
+2026-08-14T06:02:56  token-usage kind=verify prompt=3965 completion=133 cache_write=0 cache_read=2798 total=6896
+2026-08-14T06:03:00  token-usage kind=generate prompt=6923 completion=447 cache_write=0 cache_read=0 total=7370
+2026-08-14T06:03:05  token-usage kind=generate prompt=6973 completion=403 cache_write=0 cache_read=0 total=7376
+2026-08-14T06:03:11  token-usage kind=generate prompt=6965 completion=519 cache_write=0 cache_read=0 total=7484
+2026-08-14T06:03:17  token-usage kind=generate prompt=6907 completion=475 cache_write=0 cache_read=0 total=7382
+2026-08-14T06:03:22  token-usage kind=generate prompt=6587 completion=425 cache_write=0 cache_read=0 total=7012
+2026-08-14T06:03:27  token-usage kind=generate prompt=6290 completion=426 cache_write=0 cache_read=0 total=6716
+2026-08-14T06:03:31  token-usage kind=generate prompt=6160 completion=427 cache_write=0 cache_read=0 total=6587
+2026-08-14T06:03:33  token-usage kind=verify prompt=3866 completion=9 cache_write=0 cache_read=2798 total=6673
+2026-08-14T06:03:34  token-usage kind=generate prompt=5763 completion=68 cache_write=0 cache_read=0 total=5831
+2026-08-14T06:03:38  token-usage kind=generate prompt=5768 completion=401 cache_write=0 cache_read=0 total=6169
+2026-08-14T06:03:43  token-usage kind=generate prompt=6513 completion=463 cache_write=0 cache_read=0 total=6976
+2026-08-14T06:03:44  token-usage kind=verify prompt=4029 completion=9 cache_write=0 cache_read=2798 total=6836
+2026-08-14T10:24:27  token-usage kind=verify prompt=542 completion=124 cache_write=2798 cache_read=0 total=3464
+2026-08-14T10:24:31  token-usage kind=verify prompt=693 completion=181 cache_write=0 cache_read=2798 total=3672
+2026-08-14T10:25:00  token-usage kind=verify prompt=587 completion=9 cache_write=0 cache_read=2798 total=3394
+2026-08-14T10:25:01  token-usage kind=verify prompt=587 completion=9 cache_write=0 cache_read=2798 total=3394
+2026-08-14T10:25:03  token-usage kind=verify prompt=587 completion=9 cache_write=0 cache_read=2798 total=3394
+2026-08-14T10:25:07  token-usage kind=verify prompt=542 completion=165 cache_write=0 cache_read=2798 total=3505
+2026-08-14T10:25:11  token-usage kind=verify prompt=542 completion=158 cache_write=0 cache_read=2798 total=3498
+2026-08-14T10:25:15  token-usage kind=verify prompt=542 completion=178 cache_write=0 cache_read=2798 total=3518
+2026-08-14T10:25:17  token-usage kind=verify prompt=607 completion=9 cache_write=0 cache_read=2798 total=3414
+2026-08-14T10:25:18  token-usage kind=verify prompt=607 completion=9 cache_write=0 cache_read=2798 total=3414
+2026-08-14T10:25:20  token-usage kind=verify prompt=607 completion=9 cache_write=0 cache_read=2798 total=3414
+2026-08-14T10:25:21  token-usage kind=verify prompt=684 completion=9 cache_write=0 cache_read=2798 total=3491
+2026-08-14T10:25:22  token-usage kind=verify prompt=684 completion=9 cache_write=0 cache_read=2798 total=3491
+2026-08-14T10:25:24  token-usage kind=verify prompt=684 completion=9 cache_write=0 cache_read=2798 total=3491
+2026-08-14T10:25:29  token-usage kind=verify prompt=693 completion=256 cache_write=0 cache_read=2798 total=3747
+2026-08-14T10:25:33  token-usage kind=verify prompt=693 completion=161 cache_write=0 cache_read=2798 total=3652
+2026-08-14T10:25:38  token-usage kind=verify prompt=693 completion=244 cache_write=0 cache_read=2798 total=3735
+```
