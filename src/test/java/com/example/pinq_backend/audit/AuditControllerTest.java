@@ -1,5 +1,6 @@
 package com.example.pinq_backend.audit;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.audit.repository.QuizGenerationAttemptRepository;
 import com.example.pinq_backend.audit.repository.TokenUsageRepository;
 import com.example.pinq_backend.auth.service.JwtTokenProvider;
 import com.example.pinq_backend.quiz.domain.Choice;
@@ -70,6 +72,9 @@ class AuditControllerTest {
     private TokenUsageRepository tokenUsageRepository;
 
     @MockitoBean
+    private QuizGenerationAttemptRepository quizGenerationAttemptRepository;
+
+    @MockitoBean
     private UserService userService;
 
     @MockitoBean
@@ -122,6 +127,39 @@ class AuditControllerTest {
         mockMvc.perform(get("/api/admin/audit/logs").header("X-Admin-Secret", ADMIN_SECRET))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].message").value("퀴즈 생성 완료. 성공=5/5"));
+    }
+
+    @Test
+    void 생성_시도_롤업을_돌려준다() throws Exception {
+        given(quizGenerationAttemptRepository.rollupSince(any()))
+                .willReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/audit/generation-attempts")
+                        .header("X-Admin-Secret", ADMIN_SECRET)
+                        .param("days", "7"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void raw_는_그날_원시_행을_돌려준다() throws Exception {
+        given(quizGenerationAttemptRepository
+                .findByOccurredOnOrderByOccurredAtAsc(LocalDate.of(2026, 8, 16)))
+                .willReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/audit/generation-attempts")
+                        .header("X-Admin-Secret", ADMIN_SECRET)
+                        .param("date", "2026-08-16")
+                        .param("raw", "true"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void raw_날짜_형식이_어긋나면_400() throws Exception {
+        mockMvc.perform(get("/api/admin/audit/generation-attempts")
+                        .header("X-Admin-Secret", ADMIN_SECRET)
+                        .param("date", "2026/08/16")
+                        .param("raw", "true"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

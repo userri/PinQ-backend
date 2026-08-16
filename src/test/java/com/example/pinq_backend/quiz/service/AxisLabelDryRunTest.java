@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
+import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
 import com.example.pinq_backend.news.client.OpenAIQuizClient;
@@ -53,6 +54,7 @@ class AxisLabelDryRunTest {
     @Mock private QuizRepository quizRepository;
     @Mock private NewsArticleRepository newsArticleRepository;
     @Mock private TrialQuizRepository trialQuizRepository;
+    @Mock private QuizGenerationAttemptRecorder attemptRecorder;
 
     private QuizGenerationService service;
 
@@ -68,7 +70,8 @@ class AxisLabelDryRunTest {
                 clock,
                 new QuizSimilarityChecker(),
                 trialQuizRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                attemptRecorder
         );
 
         // 8/1·8/3·8/12 세 문항 — 날짜 역순으로 반환해 정렬도 함께 검증한다
