@@ -15,6 +15,8 @@ import static org.mockito.Mockito.when;
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
+import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
+import com.example.pinq_backend.news.client.GenerationOutcome;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
 import com.example.pinq_backend.news.client.OpenAIQuizClient;
@@ -60,6 +62,7 @@ class QuizGenerationServiceDedupTest {
     @Mock private QuizRepository quizRepository;
     @Mock private NewsArticleRepository newsArticleRepository;
     @Mock private TrialQuizRepository trialQuizRepository;
+    @Mock private QuizGenerationAttemptRecorder attemptRecorder;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -77,7 +80,8 @@ class QuizGenerationServiceDedupTest {
                 clock,
                 new QuizSimilarityChecker(),
                 trialQuizRepository,
-                objectMapper
+                objectMapper,
+                attemptRecorder
         );
 
         // 공통 기본 동작: 뉴스 없음 / 오늘 퀴즈 없음 / 이력 없음 / 저장은 인자 그대로 반환
@@ -112,9 +116,9 @@ class QuizGenerationServiceDedupTest {
         String duplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
         String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(duplicate)));
+                .thenReturn(GenerationOutcome.success(quizDto(duplicate)));
         when(openAIQuizClient.generateQuiz(eq("기사B"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(fresh)));
+                .thenReturn(GenerationOutcome.success(quizDto(fresh)));
 
         int generated = service.generateTodayQuizzes();
 
@@ -143,14 +147,14 @@ class QuizGenerationServiceDedupTest {
                 .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
         String first = "미국 국채 금리가 상승하면 일반적으로 주식 시장에 미치는 영향은 무엇인가요?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(first)));
+                .thenReturn(GenerationOutcome.success(quizDto(first)));
 
         // EXCHANGE_RATE: 기사C 가 검색되지만 생성 결과가 방금 저장된 문항의 변주
         when(naverNewsClient.search(eq("원달러 환율"), anyInt()))
                 .thenReturn(List.of(newsItem("기사C", "https://news.example.com/c")));
         String sameCycleDuplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
         when(openAIQuizClient.generateQuiz(eq("기사C"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(sameCycleDuplicate)));
+                .thenReturn(GenerationOutcome.success(quizDto(sameCycleDuplicate)));
 
         int generated = service.generateTodayQuizzes();
 
@@ -178,7 +182,7 @@ class QuizGenerationServiceDedupTest {
         String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
                 anyList(), isNull(), isNull(), isNull(), isNull(), isNull()))
-                .thenReturn(Optional.of(quizDto(fresh)));
+                .thenReturn(GenerationOutcome.success(quizDto(fresh)));
 
         var result = service.trialGenerate(Category.INTEREST_RATE, null, null, null, null, null);
 
@@ -205,7 +209,7 @@ class QuizGenerationServiceDedupTest {
         String duplicate = "미국 국채 금리가 상승할 경우 주식 시장에 미치는 영향은 무엇일까요?";
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE),
                 anyList(), isNull(), isNull(), isNull(), isNull(), isNull()))
-                .thenReturn(Optional.of(quizDto(duplicate)));
+                .thenReturn(GenerationOutcome.success(quizDto(duplicate)));
 
         var result = service.trialGenerate(Category.INTEREST_RATE, null, null, null, null, null);
 
@@ -236,11 +240,11 @@ class QuizGenerationServiceDedupTest {
 
         // 기사A → 같은 용어·다른 문장 (렉시컬로는 못 잡는 케이스), 기사B → 새 소재
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.REAL_ESTATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "은행별 대출 한도를 정부가 관리하면 청약 당첨자의 자금 계획은 어떻게 되는가?",
                         "가계대출 총량 규제: 금융당국이 은행별 대출 총량을 제한하는 정책")));
         when(openAIQuizClient.generateQuiz(eq("기사B"), anyString(), eq(Category.REAL_ESTATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "전세가율이 높아지면 갭투자 수요는 왜 늘어나는가?",
                         "전세가율: 매매가 대비 전세가 비율")));
 
@@ -276,7 +280,7 @@ class QuizGenerationServiceDedupTest {
         ));
         // 같은 본원 용어지만 다른 개념의 문항 — 정상 통과해야 한다
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "기준금리와 콜금리의 차이는 무엇인가?",
                         "기준금리: 중앙은행이 정하는 정책 금리")));
 
@@ -295,11 +299,11 @@ class QuizGenerationServiceDedupTest {
 
         // 기사A → 용어가 카테고리명 그대로("환율") = 정보량 0. 실발행분 12건의 형태 그대로다.
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "달러 공급이 늘면 원화 가치는 어떻게 되는가?",
                         "환율: 두 통화 간 교환 비율")));
         when(openAIQuizClient.generateQuiz(eq("기사B"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "외국인 자금이 유출되면 원화 가치는 왜 떨어지는가?",
                         "자본 유출: 국내 자산을 팔아 해외로 빠져나가는 자금 흐름")));
 
@@ -319,7 +323,7 @@ class QuizGenerationServiceDedupTest {
         ));
         // 금리 문항의 용어가 "환율" — 겹치는 낱말이 없으므로 목록에서 중복으로 보이지 않는다
         when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(
+                .thenReturn(GenerationOutcome.success(quizDto(
                         "미국 금리가 오르면 원화 환율은 왜 상승 압력을 받는가?",
                         "환율: 두 통화 간 교환 비율")));
 
@@ -343,7 +347,9 @@ class QuizGenerationServiceDedupTest {
         // 기사 속성 때문에 SKIP — 키워드가 바뀌어도 판정은 같다
         when(openAIQuizClient.generateQuiz(
                 eq("겹치는기사"), anyString(), eq(Category.INFLATION), anyList()))
-                .thenReturn(Optional.empty());
+                .thenReturn(GenerationOutcome.failure(
+                        com.example.pinq_backend.audit.domain.AttemptStage.GENERATE,
+                        com.example.pinq_backend.audit.domain.AttemptReason.LLM_SKIP, null));
 
         int generated = service.generateTodayQuizzes();
 
@@ -365,11 +371,13 @@ class QuizGenerationServiceDedupTest {
         // INTEREST_RATE 슬롯에서는 부적합, EXCHANGE_RATE 슬롯에서는 통과
         when(openAIQuizClient.generateQuiz(
                 eq("겹치는기사"), anyString(), eq(Category.INTEREST_RATE), anyList()))
-                .thenReturn(Optional.empty());
+                .thenReturn(GenerationOutcome.failure(
+                        com.example.pinq_backend.audit.domain.AttemptStage.GENERATE,
+                        com.example.pinq_backend.audit.domain.AttemptReason.LLM_SKIP, null));
         String fresh = "달러 공급이 늘면 원·달러 환율은 어느 방향으로 움직이는가?";
         when(openAIQuizClient.generateQuiz(
                 eq("겹치는기사"), anyString(), eq(Category.EXCHANGE_RATE), anyList()))
-                .thenReturn(Optional.of(quizDto(fresh)));
+                .thenReturn(GenerationOutcome.success(quizDto(fresh)));
 
         int generated = service.generateTodayQuizzes();
 

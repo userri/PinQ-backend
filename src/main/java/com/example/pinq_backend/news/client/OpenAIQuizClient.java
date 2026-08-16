@@ -2,6 +2,8 @@ package com.example.pinq_backend.news.client;
 
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.audit.TokenUsageRecorder;
+import com.example.pinq_backend.audit.domain.AttemptReason;
+import com.example.pinq_backend.audit.domain.AttemptStage;
 import com.example.pinq_backend.config.properties.OpenAIProperties;
 import com.example.pinq_backend.news.dto.GeneratedQuizDto;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -106,9 +108,10 @@ public class OpenAIQuizClient {
      * @param recentQuestions 최근 출제된 문항 목록 (같은 카테고리 + 오늘 생성분).
      *                        생성 프롬프트에는 "중복 금지" 목록으로, Claude 검증에는
      *                        의미적 중복 판정 기준으로 주입된다. 비어 있으면 해당 섹션 생략.
-     * @return 생성된 퀴즈 DTO. 오류 또는 어느 단계든 검증 실패 시 Optional.empty().
+     * @return 성공 시 퀴즈를 담은 GenerationOutcome, 실패 시 단계·사유를 담은 GenerationOutcome.
+     *         (종전에는 다섯 실패 경로가 전부 Optional.empty() 로 뭉개져 손실 집계가 불가능했다)
      */
-    public Optional<GeneratedQuizDto> generateQuiz(
+    public GenerationOutcome generateQuiz(
             String title,
             String content,
             Category category,
@@ -125,7 +128,7 @@ public class OpenAIQuizClient {
      * 셋 다 null 이면 프로덕션 경로와 완전히 동일하게 동작한다.
      * 실험에서 효과가 확인된 것만 코드/설정에 확정 반영한다.
      */
-    public Optional<GeneratedQuizDto> generateQuiz(
+    public GenerationOutcome generateQuiz(
             String title,
             String content,
             Category category,
@@ -163,28 +166,33 @@ public class OpenAIQuizClient {
 
             logTokenUsage("generate", rawResponse);
 
-            Optional<GeneratedQuizDto> quizOpt = parseQuiz(rawResponse);
-            if (quizOpt.isEmpty()) return Optional.empty();
+            GenerationOutcome parsed = parseQuiz(rawResponse);
+            if (!parsed.isSuccess()) return parsed;
 
-            GeneratedQuizDto quiz = quizOpt.get();
+            GeneratedQuizDto quiz = parsed.quiz();
 
             // 1차: 룰베이스 검증 — Claude 호출보다 먼저 돌려서 비용 절감.
             QuizRuleValidator.Result ruleResult = ruleValidator.validate(quiz);
             if (!ruleResult.valid()) {
                 log.warn("룰베이스 검증 실패, 퀴즈 폐기. reason={} question={}",
                         ruleResult.reason(), quiz.getQuestion());
-                return Optional.empty();
+                return GenerationOutcome.failure(
+                        AttemptStage.VALIDATE, AttemptReason.RULE_REJECTED, ruleResult.reason());
             }
 
             // 2차: Claude cross-model 검증 (정답 정합성 + 이력과의 의미적 중복).
+            // ⚠️ verifyAnswer 는 boolean 만 돌려준다 — 기준 16 인지 복수 정답인지는 알 수 없다.
+            //    응답 형식 변경은 캐시된 고정부를 건드리는 일이라 별건이다(docs/PENDING.md).
             if (!verifyAnswer(quiz, category, recentQuestions, extraVerifyRules, verifyModelOverride)) {
-                return Optional.empty();
+                return GenerationOutcome.failure(
+                        AttemptStage.VERIFY, AttemptReason.VERIFY_FAILED, null);
             }
 
-            return Optional.of(quiz);
+            return GenerationOutcome.success(quiz);
         } catch (Exception e) {
             log.error("OpenAI API 퀴즈 생성 실패. title={}", title, e);
-            return Optional.empty();
+            return GenerationOutcome.failure(
+                    AttemptStage.GENERATE, AttemptReason.API_ERROR, e.getMessage());
         }
     }
 
@@ -485,7 +493,7 @@ public class OpenAIQuizClient {
         }
     }
 
-    private Optional<GeneratedQuizDto> parseQuiz(String rawResponse) {
+    private GenerationOutcome parseQuiz(String rawResponse) {
         try {
             JsonNode root = objectMapper.readTree(rawResponse);
             String text = root.path("choices").get(0).path("message").path("content").asText();
@@ -501,13 +509,15 @@ public class OpenAIQuizClient {
 
             if (quiz.isSkip()) {
                 log.info("OpenAI가 기사 SKIP 판정. 이유: {}", quiz.getSkipReason());
-                return Optional.empty();
+                return GenerationOutcome.failure(
+                        AttemptStage.GENERATE, AttemptReason.LLM_SKIP, quiz.getSkipReason());
             }
 
-            return Optional.of(quiz);
+            return GenerationOutcome.success(quiz);
         } catch (Exception e) {
             log.error("OpenAI 응답 파싱 실패. response={}", rawResponse, e);
-            return Optional.empty();
+            return GenerationOutcome.failure(
+                    AttemptStage.GENERATE, AttemptReason.PARSE_FAILED, e.getMessage());
         }
     }
 

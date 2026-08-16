@@ -3,6 +3,10 @@ package com.example.pinq_backend.quiz.service;
 import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
+import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
+import com.example.pinq_backend.audit.domain.AttemptReason;
+import com.example.pinq_backend.audit.domain.AttemptStage;
+import com.example.pinq_backend.news.client.GenerationOutcome;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
 import com.example.pinq_backend.news.client.OpenAIQuizClient;
@@ -121,6 +125,14 @@ public class QuizGenerationService {
     private final QuizSimilarityChecker similarityChecker;
     private final com.example.pinq_backend.quiz.repository.TrialQuizRepository trialQuizRepository;
     private final com.fasterxml.jackson.databind.ObjectMapper trialObjectMapper;
+    private final QuizGenerationAttemptRecorder attemptRecorder;
+
+    /**
+     * 회차 구분. 시각으로 추측하지 않는다 — 정기 회차가 늦어지면 오분류된다.
+     * 진입점이 다르므로 자기가 어느 쪽인지 알고 있다.
+     */
+    private static final String RUN_REGULAR = "REGULAR";
+    private static final String RUN_BACKFILL = "BACKFILL";
 
     /**
      * 부분 누락 백필 마감 시각. 이 시각 이후에는 일부 카테고리가 비어 있어도 채우지 않는다.
@@ -174,7 +186,7 @@ public class QuizGenerationService {
         int generated = 0;
         for (Category category : missing) {
             try {
-                if (generateQuizForCategory(category, today, usedUrls, history)) generated++;
+                if (generateQuizForCategory(category, today, usedUrls, history, RUN_BACKFILL)) generated++;
             } catch (Exception e) {
                 log.error("부분 백필 중 카테고리 {} 생성 예외", category, e);
             }
@@ -209,7 +221,7 @@ public class QuizGenerationService {
         int generatedCount = 0;
         for (Category category : Category.values()) {
             try {
-                boolean success = generateQuizForCategory(category, today, usedUrls, history);
+                boolean success = generateQuizForCategory(category, today, usedUrls, history, RUN_REGULAR);
                 if (success) generatedCount++;
             } catch (Exception e) {
                 log.error("카테고리 {} 퀴즈 생성 중 예외 발생", category, e);
@@ -232,7 +244,8 @@ public class QuizGenerationService {
             Category category,
             LocalDate today,
             Set<String> usedUrls,
-            DedupHistory history
+            DedupHistory history,
+            String runWindow
     ) {
         List<String> keywords = CATEGORY_KEYWORDS.getOrDefault(
                 category, List.of(category.getDisplayName())
@@ -277,6 +290,8 @@ public class QuizGenerationService {
                 String url = item.originallink() != null ? item.originallink() : item.link();
                 if (usedUrls.contains(url)) {
                     log.info("중복 기사 건너뜀. category={}, url={}", category, url);
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.PREFILTER, AttemptReason.CROSS_CATEGORY_USED, null, null);
                     continue;
                 }
 
@@ -287,6 +302,8 @@ public class QuizGenerationService {
 
                 if (isEditorialTitle(title)) {
                     log.info("사설·칼럼 기사 건너뜀. category={}, title={}", category, title);
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.PREFILTER, AttemptReason.EDITORIAL, null, null);
                     continue;
                 }
 
@@ -298,18 +315,27 @@ public class QuizGenerationService {
                             return item.cleanDescription();
                         });
 
-                if (content.isBlank()) continue;
-
-                Optional<GeneratedQuizDto> quizOpt =
-                        openAIQuizClient.generateQuiz(title, content, category, promptHistory);
-                if (quizOpt.isEmpty()) {
-                    log.info("기사 건너뜀 (SKIP 또는 생성 실패). category={}, title={}", category, title);
+                if (content.isBlank()) {
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.PREFILTER, AttemptReason.EMPTY_CONTENT, null, null);
                     continue;
                 }
 
-                GeneratedQuizDto dto = quizOpt.get();
+                GenerationOutcome outcome =
+                        openAIQuizClient.generateQuiz(title, content, category, promptHistory);
+                if (!outcome.isSuccess()) {
+                    log.info("기사 건너뜀. category={}, title={}, stage={}, reason={}",
+                            category, title, outcome.stage(), outcome.reason());
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            outcome.stage(), outcome.reason(), outcome.detail(), null);
+                    continue;
+                }
+
+                GeneratedQuizDto dto = outcome.quiz();
                 if (!isValidQuiz(dto)) {
                     log.warn("OpenAI 응답 유효성 검증 실패. title={}", title);
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.VALIDATE, AttemptReason.INVALID_RESPONSE, null, null);
                     continue;
                 }
 
@@ -329,6 +355,9 @@ public class QuizGenerationService {
                 if (term != null && term.equals(category.getDisplayName())) {
                     log.info("keyword 용어가 카테고리명과 동일해 폐기. category={}, term={}, question={}",
                             category, term, dto.getQuestion());
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.VALIDATE, AttemptReason.TERM_EQUALS_CATEGORY,
+                            "term=" + term, null);
                     continue;
                 }
 
@@ -339,6 +368,9 @@ public class QuizGenerationService {
                         && history.isRecentTerm(category, term)) {
                     log.info("최근 {}일 내 동일 keyword 용어 재출제로 폐기. category={}, term={}, question={}",
                             TERM_GUARD_DAYS, category, term, dto.getQuestion());
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.VALIDATE, AttemptReason.TERM_REUSE_GUARD,
+                            "term=" + term, null);
                     continue;
                 }
 
@@ -354,6 +386,10 @@ public class QuizGenerationService {
                             "%.2f".formatted(match.tokenJaccard()),
                             "%.2f".formatted(match.bigramDice()),
                             dto.getQuestion(), match.existingQuestion());
+                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                            AttemptStage.VALIDATE, AttemptReason.LEXICAL_DUPLICATE,
+                            "jaccard=%.2f dice=%.2f".formatted(
+                                    match.tokenJaccard(), match.bigramDice()), null);
                     continue;
                 }
 
@@ -377,7 +413,7 @@ public class QuizGenerationService {
 
                 // Quiz 저장. category 는 기사(article.category)가 아니라 '출제 슬롯'의
                 // 카테고리를 저장한다 — 기사 재사용 시 라벨이 오염되는 문제를 원천 차단.
-                quizRepository.save(
+                Quiz saved = quizRepository.save(
                         Quiz.builder()
                                 .article(article)
                                 .category(category)
@@ -388,6 +424,9 @@ public class QuizGenerationService {
                                 .choices(choices)
                                 .build()
                 );
+
+                attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                        AttemptStage.PUBLISHED, null, null, saved.getId());
 
                 // 사용된 URL 등록 (다른 카테고리에서 재사용 방지)
                 usedUrls.add(url);
@@ -486,12 +525,12 @@ public class QuizGenerationService {
                 if (content.isBlank()) continue;
 
                 tried++;
-                Optional<GeneratedQuizDto> quizOpt = openAIQuizClient.generateQuiz(
+                GenerationOutcome outcome = openAIQuizClient.generateQuiz(
                         title, content, category, promptHistory, extraGenRules, extraVerifyRules,
                         model, genPromptOverride, verifyModel);
-                if (quizOpt.isEmpty()) continue;
+                if (!outcome.isSuccess()) continue;
 
-                GeneratedQuizDto dto = quizOpt.get();
+                GeneratedQuizDto dto = outcome.quiz();
                 if (!isValidQuiz(dto)) continue;
 
                 Optional<QuizSimilarityChecker.Match> similar =
