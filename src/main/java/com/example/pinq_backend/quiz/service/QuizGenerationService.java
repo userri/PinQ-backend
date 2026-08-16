@@ -131,6 +131,12 @@ public class QuizGenerationService {
      * 회차 구분. 시각으로 추측하지 않는다 — 정기 회차가 늦어지면 오분류된다.
      * 진입점이 다르므로 자기가 어느 쪽인지 알고 있다.
      */
+    /**
+     * {@code generateTodayQuizzes()} (정기 진입점) 이 낸 산출물이라는 뜻이지, "06:00 스케줄
+     * 실행"이라는 뜻이 아니다. {@code ensureTodayQuizzes()} 의 전량 복구 경로도 결국
+     * {@code generateTodayQuizzes()} 를 호출하므로 그 결과도 REGULAR 로 기록된다 — 설계
+     * 의도대로다(진입점 기준이지 시각 기준이 아니다).
+     */
     private static final String RUN_REGULAR = "REGULAR";
     private static final String RUN_BACKFILL = "BACKFILL";
 
@@ -290,8 +296,13 @@ public class QuizGenerationService {
                 String url = item.originallink() != null ? item.originallink() : item.link();
                 if (usedUrls.contains(url)) {
                     log.info("중복 기사 건너뜀. category={}, url={}", category, url);
-                    attemptRecorder.record(category.name(), runWindow, keyword, title, url,
-                            AttemptStage.PREFILTER, AttemptReason.CROSS_CATEGORY_USED, null, null);
+                    // 기록은 아래 triedUrls 가드를 통과한 뒤에만 한다 — 키워드 목록이 겹쳐
+                    // 같은 기사가 여러 검색 결과에 반복 등장하면, 가드보다 위에서 기록할 경우
+                    // 한 기사가 CROSS_CATEGORY_USED 행을 여러 개 남겨 집계가 부풀려진다.
+                    if (triedUrls.add(url)) {
+                        attemptRecorder.record(category.name(), runWindow, keyword, title, url,
+                                AttemptStage.PREFILTER, AttemptReason.CROSS_CATEGORY_USED, null, null);
+                    }
                     continue;
                 }
 

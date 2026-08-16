@@ -111,8 +111,19 @@ public class QuizGenerationAttempt {
         this.quizId = quizId;
     }
 
+    /**
+     * UTF-16 단위(length)로 자른다. 경계가 서로게이트 쌍 중간이면(문자 하나가 high/low
+     * 서로게이트 두 코드 유닛으로 되어 있는 이모지 등) 한 글자 더 줄인다 — 안 그러면 짝
+     * 없는 서로게이트가 남아 MySQL utf8mb4 가 "Incorrect string value" 로 저장을 거부하고,
+     * 그 예외는 recorder 가 삼키므로 자르기가 막으려던 바로 그 일(행 유실)이 벌어진다.
+     */
     private static String truncate(String value, int max) {
         if (value == null) return null;
-        return value.length() <= max ? value : value.substring(0, max);
+        if (value.length() <= max) return value;
+        int cut = max;
+        if (cut > 0 && Character.isHighSurrogate(value.charAt(cut - 1))) {
+            cut--;
+        }
+        return value.substring(0, cut);
     }
 }

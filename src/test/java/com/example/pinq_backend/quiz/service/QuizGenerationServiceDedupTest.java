@@ -16,6 +16,8 @@ import com.example.pinq_backend.article.domain.Category;
 import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
+import com.example.pinq_backend.audit.domain.AttemptReason;
+import com.example.pinq_backend.audit.domain.AttemptStage;
 import com.example.pinq_backend.news.client.GenerationOutcome;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
@@ -358,6 +360,76 @@ class QuizGenerationServiceDedupTest {
         verify(openAIQuizClient, times(1))
                 .generateQuiz(eq("겹치는기사"), anyString(), eq(Category.INFLATION), anyList());
         verify(naverArticleScraper, times(1)).scrape(shared.link());
+    }
+
+    @Test
+    @DisplayName("이미 다른 카테고리에서 쓰인 기사가 여러 키워드 검색에 겹쳐도 CROSS_CATEGORY_USED 는 한 번만 기록된다")
+    void crossCategoryUsedArticle_isRecordedOnce_evenAcrossOverlappingKeywordSearches() throws Exception {
+        // INTEREST_RATE: 기사A 로 성공 저장 — usedUrls 에 등록된다
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/shared")));
+        String first = "미국 국채 금리가 상승하면 일반적으로 주식 시장에 미치는 영향은 무엇인가요?";
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(GenerationOutcome.success(quizDto(first)));
+
+        // EXCHANGE_RATE: 키워드 4개 검색 결과 전부에 같은(이미 쓰인) 기사가 걸린다 — 실운영의
+        // 키워드 겹침 재현. usedUrls 가드에서 매번 걸리므로 EXCHANGE_RATE 는 실패로 끝난다.
+        NaverNewsItem shared = newsItem("기사A", "https://news.example.com/shared");
+        when(naverNewsClient.search(eq("원달러 환율"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("달러 환율"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("외환시장"), anyInt())).thenReturn(List.of(shared));
+        when(naverNewsClient.search(eq("환율"), anyInt())).thenReturn(List.of(shared));
+
+        int generated = service.generateTodayQuizzes();
+
+        assertThat(generated).isEqualTo(1); // INTEREST_RATE 만 성공
+
+        // CROSS_CATEGORY_USED 는 EXCHANGE_RATE 슬롯에서 정확히 한 번만 기록돼야 한다 —
+        // triedUrls 가드보다 위에서 기록하면 키워드 수(4)만큼 부풀어 찍힌다.
+        verify(attemptRecorder, times(1)).record(
+                eq(Category.EXCHANGE_RATE.name()), anyString(), anyString(), anyString(),
+                eq("https://news.example.com/shared"),
+                eq(AttemptStage.PREFILTER), eq(AttemptReason.CROSS_CATEGORY_USED), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("발행 성공 시 PUBLISHED 로 기록되고 quizId 가 채워진다")
+    void publishedAttempt_isRecordedWithNonNullQuizId() throws Exception {
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
+        String fresh = "콜금리와 기준금리의 가장 큰 차이는 무엇인가?";
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(GenerationOutcome.success(quizDto(fresh)));
+        when(quizRepository.save(any(Quiz.class))).thenAnswer(inv -> {
+            Quiz quiz = inv.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(quiz, "id", 42L);
+            return quiz;
+        });
+
+        int generated = service.generateTodayQuizzes();
+
+        assertThat(generated).isEqualTo(1);
+        verify(attemptRecorder).record(
+                eq(Category.INTEREST_RATE.name()), anyString(), eq("기준금리"), eq("기사A"),
+                eq("https://news.example.com/a"),
+                eq(AttemptStage.PUBLISHED), isNull(), isNull(), eq(42L));
+    }
+
+    @Test
+    @DisplayName("생성 실패 시 클라이언트가 돌려준 stage/reason 이 그대로 기록된다")
+    void generationFailure_recordsStageAndReasonFromOutcome() throws Exception {
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(GenerationOutcome.failure(AttemptStage.GENERATE, AttemptReason.LLM_SKIP, "skip-detail"));
+
+        int generated = service.generateTodayQuizzes();
+
+        assertThat(generated).isZero();
+        verify(attemptRecorder).record(
+                eq(Category.INTEREST_RATE.name()), anyString(), eq("기준금리"), eq("기사A"),
+                eq("https://news.example.com/a"),
+                eq(AttemptStage.GENERATE), eq(AttemptReason.LLM_SKIP), eq("skip-detail"), isNull());
     }
 
     @Test
