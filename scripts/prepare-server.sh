@@ -35,6 +35,11 @@ col_exists() {
     "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='$DB_NAME' AND TABLE_NAME='$1' AND COLUMN_NAME='$2'" 2>/dev/null
 }
 
+table_exists() {
+  docker exec "$MYSQL_CONTAINER" mysql -N -u"$DB_USERNAME" -p"$DB_PASSWORD" -e \
+    "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$DB_NAME' AND TABLE_NAME='$1'" 2>/dev/null
+}
+
 run_sql() {
   docker exec -i "$MYSQL_CONTAINER" mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_NAME" < "$1"
 }
@@ -133,6 +138,17 @@ if [ "$(col_exists review_item water_count)" = "1" ]; then
   else
     echo "SKIP: 물 카운터 백필 대상 없음"
   fi
+fi
+
+# 토큰 사용량 영속화 — CREATE TABLE IF NOT EXISTS 라 SQL 자체가 멱등이나,
+# 불필요한 실행을 피하려 존재 가드를 둔다.
+# ⚠️ 이 등록이 빠져 있어 8/14 배포가 실패했다(파일이 docs/migration/ 에만 있었고
+# 새 앱은 DDL_AUTO=validate 라 missing table [token_usage] 로 기동 실패).
+if [ "$(table_exists token_usage)" = "0" ]; then
+  run_sql scripts/migration/2026-08-14-token-usage.sql
+  echo "OK: token_usage 마이그레이션 적용"
+else
+  echo "SKIP: token_usage 이미 존재"
 fi
 
 echo "✅ 서버 준비 완료"

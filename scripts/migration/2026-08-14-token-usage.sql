@@ -9,13 +9,20 @@
 -- 배포 순서 (docs/db-access-and-migration.md 규칙)
 --   ① 이 스크립트 실행  →  ② 테이블 확인  →  ③ 새 이미지 배포
 --   prod 는 DDL_AUTO=validate 라 **테이블이 없으면 앱이 기동하지 않는다.** 순서를 바꾸지 말 것.
+--   ⚠️ 이 파일은 원래 docs/migration/ 에 있었다 — CI 의 "Prepare EC2" 단계는
+--   scripts/migration/ 만 보고 scripts/prepare-server.sh 에 등록된 것만 실행하므로,
+--   거기 둔 채 코드를 push 한 8/14 배포가 `missing table [token_usage]` 로 통째로 실패했다.
+--   새 마이그레이션은 반드시 이 디렉터리 + prepare-server.sh 등록까지 함께 한다.
+--
+-- 멱등성
+--   IF NOT EXISTS — prepare-server.sh 의 존재 가드와 이중이지만, 매 배포 재실행돼도 안전하다.
 --
 -- NULL 허용
 --   model 만 NULL 을 허용한다 — 응답에 model 필드가 없는 경우가 있고(구형 응답·오류 응답),
 --   그 한 건 때문에 계측을 통째로 버리는 것보다 모델 미상으로 남기는 편이 낫다.
 --   토큰 수는 전부 NOT NULL — 값이 없으면 애초에 저장하지 않는다(파싱 단계에서 걸러진다).
 
-CREATE TABLE token_usage (
+CREATE TABLE IF NOT EXISTS token_usage (
     id                BIGINT       NOT NULL AUTO_INCREMENT,
     occurred_at       DATETIME(6)  NOT NULL,
     occurred_on       DATE         NOT NULL,

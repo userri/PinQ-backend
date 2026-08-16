@@ -864,4 +864,15 @@ prompt 10,574 / cache_write 2,798 / cache_read 44,768 / total 59,688, cache_read
 06:03:02  token-usage kind=verify prompt=3923 completion=9   cache_write=0    cache_read=2798 total=6730
 06:10:05  token-usage kind=verify prompt=3545 completion=9   cache_write=2798 cache_read=0    total=6352
 ```
-(정기 회차 9행 + 백필 1행. `kind=generate` 52행은 전부 `cache_write=0 cache_read=0` 이라 생략했다 — 캐시 대상이 아니므로 설계대로다)
+(정기 회차 9행 + 백필 1행. `kind=generate` 행은 전부 `cache_write=0 cache_read=0` 이라 원문을 생략했다 — 캐시 대상이 아니므로 설계대로다)
+
+#### 하루 합계 보존 — 2026-08-16 (배포 직전 재조회, 버퍼가 비워지기 전)
+
+| kind | 호출 수 | prompt | completion | cache_write | cache_read | total |
+|---|---|---|---|---|---|---|
+| generate | 53 | 321,946 | 11,935 | 0 | 0 | 333,881 |
+| verify | 10 | 37,214 | 1,026 | 5,596 | 22,384 | 66,220 |
+
+⚠️ `generate` 는 **52행이 아니라 53행**이다(위 ⑥ 의 52 는 오기). 이 표를 남기는 이유는
+`token_usage` 테이블이 **배포 이후부터만** 차기 때문이다 — 8/16 은 테이블에 안 들어가므로
+날짜 추이의 첫 비교점이 이 합계뿐이다. 배포 후 첫 날부터는 `pinq-quiz-fetch.sh tokens` 가 SSOT.

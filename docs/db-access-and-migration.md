@@ -45,7 +45,7 @@ SQL 을 셸에 다시 타이핑하지 않는다. **레포에 커밋된 파일을
 ```bash
 # 로컬에서 한 번에
 scp -i "$PINQ_SSH_KEY" \
-  docs/migration/<파일>.sql "$PINQ_SSH_HOST":/tmp/m.sql
+  scripts/migration/<파일>.sql "$PINQ_SSH_HOST":/tmp/m.sql
 
 ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" \
   'cd ~/pinq_backend && set -a && . ./.env && set +a && \
@@ -97,6 +97,10 @@ ssh -i "$PINQ_SSH_KEY" -L 3307:127.0.0.1:3306 "$PINQ_SSH_HOST" -N
 ## 규칙
 
 - **비밀번호를 명령줄·파일·로그에 남기지 않는다.** 항상 `.env` 로드 후 변수 참조.
-- 스키마 변경은 **`docs/migration/YYYY-MM-DD-<설명>.sql` 로 커밋한 뒤** 실행한다.
-  파일 상단에 "왜 필요한가 / 배포 순서 / NULL 허용 이유"를 주석으로 남긴다.
+- 스키마 변경은 **`scripts/migration/YYYY-MM-DD-<설명>.sql` 로 커밋하고
+  `scripts/prepare-server.sh` 에 존재 가드와 함께 등록한다.** 파일 상단에
+  "왜 필요한가 / 배포 순서 / NULL 허용 이유"를 주석으로 남긴다.
+  ⚠️ **`docs/migration/` 은 CI 가 보지 않는다** — 거기 두면 배포 전 마이그레이션이 돌지 않고,
+  `ddl-auto=validate` 라 새 앱이 기동에 실패해 **배포가 통째로 깨진다**(2026-08-14 token_usage 사고).
+  아래 수기 실행 절차는 CI 밖에서 급히 손봐야 할 때의 폴백이다.
 - 되돌릴 수 없는 변경(DROP COLUMN, DROP TABLE)은 실행 전 백업을 확인한다.
