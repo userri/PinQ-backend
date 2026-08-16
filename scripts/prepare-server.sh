@@ -151,4 +151,13 @@ else
   echo "SKIP: token_usage 이미 존재"
 fi
 
+# 퀴즈 생성 시도 계측 — CREATE TABLE IF NOT EXISTS 라 SQL 자체가 멱등이나,
+# 불필요한 실행을 피하려 존재 가드를 둔다.
+if [ "$(table_exists quiz_generation_attempt)" = "0" ]; then
+  run_sql scripts/migration/2026-08-16-quiz-generation-attempt.sql
+  echo "OK: quiz_generation_attempt 마이그레이션 적용"
+else
+  echo "SKIP: quiz_generation_attempt 이미 존재"
+fi
+
 echo "✅ 서버 준비 완료"
