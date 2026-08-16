@@ -73,7 +73,7 @@
 |---|---|---|
 | `PREFILTER` | `EDITORIAL` · `CROSS_CATEGORY_USED` · `EMPTY_CONTENT` | 문자열 매칭 → 정확해짐 |
 | `GENERATE` | `LLM_SKIP` · `PARSE_FAILED` · `API_ERROR` | 셋 다 구분 불가였다 → 분리됨 |
-| `VALIDATE` | `RULE_REJECTED` (+ `detail`) | 버려지던 `QuizRuleValidator.Result.reason()` 이 처음 남는다 |
+| `VALIDATE` | `RULE_REJECTED` (+ `detail`) · `INVALID_RESPONSE` · `TERM_EQUALS_CATEGORY` · `TERM_REUSE_GUARD` · `LEXICAL_DUPLICATE` | 버려지던 `QuizRuleValidator.Result.reason()` 이 처음 남는다. 뒤 넷은 **생성 서비스의 저장 전 방어선**이고 현행 집계에서는 `duplicate`/`other` 로 섞여 들어간다 |
 | `VERIFY` | `VERIFY_FAILED` | **정밀해지지 않는다 — 아래 한계** |
 | `PUBLISHED` | NULL, `quiz_id` 채움 | 회차 요약 줄에서 세던 것을 행으로 |
 
@@ -104,7 +104,17 @@
 회차 구분을 안다)이 다르다. 그러므로 **사유는 반환값으로 올려보내고 저장은 생성 서비스에서**
 한다. 클라이언트가 직접 쓰면 맥락 컬럼이 빈다.
 
-저장 지점 5곳: 사설 필터 · 타 카테고리 중복 URL · 빈 본문 · 생성 결과(성공/실패) · 발행 직후.
+저장 지점 8곳 — 앞 셋은 `PREFILTER`, 가운데 넷은 클라이언트가 올려보낸 사유와 서비스의 저장 전
+방어선, 마지막이 `PUBLISHED`:
+
+1. 사설·칼럼 제목 필터
+2. 타 카테고리가 이미 쓴 URL
+3. 빈 본문(스크래핑·description 둘 다 실패)
+4. `generateQuiz()` 실패 — 반환된 stage·reason 을 그대로 기록
+5. `isValidQuiz` 불통과
+6. keyword 용어 = 카테고리명
+7. 용어 재사용 가드 / 렉시컬 유사도
+8. 퀴즈 저장 직후 (`PUBLISHED`, `quiz_id`)
 
 ### Recorder
 
