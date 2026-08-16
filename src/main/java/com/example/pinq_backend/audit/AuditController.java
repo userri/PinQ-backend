@@ -2,17 +2,21 @@ package com.example.pinq_backend.audit;
 
 import ch.qos.logback.classic.Level;
 import com.example.pinq_backend.audit.dto.AuditQuizResponse;
+import com.example.pinq_backend.audit.repository.QuizGenerationAttemptRepository;
 import com.example.pinq_backend.audit.repository.TokenUsageRepository;
 import com.example.pinq_backend.quiz.repository.QuizRepository;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 일일 퀴즈 검수용 읽기 전용 조회 API (admin — AdminAuthFilter 가 X-Admin-Secret 검사).
@@ -34,10 +38,12 @@ public class AuditController {
     private static final int MAX_COUNT_DAYS = 90;
     private static final int MAX_LOG_HOURS = 168;
     private static final int MAX_TOKEN_DAYS = 90;
+    private static final int MAX_ATTEMPT_DAYS = 90;
 
     private final QuizRepository quizRepository;
     private final AuditLogBuffer auditLogBuffer;
     private final TokenUsageRepository tokenUsageRepository;
+    private final QuizGenerationAttemptRepository quizGenerationAttemptRepository;
     private final Clock clock;
 
     /**
@@ -96,6 +102,43 @@ public class AuditController {
     ) {
         int window = clamp(days, 1, MAX_TOKEN_DAYS);
         return tokenUsageRepository.rollupSince(LocalDate.now(clock).minusDays(window - 1L));
+    }
+
+    /**
+     * 퀴즈 생성 시도의 손실 집계.
+     *
+     * 기본은 날짜×카테고리×stage×reason 롤업이다 — 원시 행은 하루 50~160건이라
+     * 그대로 뱉으면 읽을 수 없다. {@code raw=true} 는 그날 원시 행을 돌려주며,
+     * <b>기사 제목으로 기사 풀 오염을 눈으로 확인하는 경로</b>다(2026-08-16 에
+     * EXCHANGE_RATE 후보로 교보문고 베스트셀러가 들어온 것을 이렇게 봤다).
+     *
+     * 종전에는 이 데이터가 AuditLogBuffer(메모리)에만 있어 검수가 하루만 밀려도
+     * 영구 결손이었다(8/15).
+     *
+     * @param date raw 조회 대상 날짜. 생략 시 오늘(KST). 형식이 어긋나면 400.
+     */
+    @GetMapping("/generation-attempts")
+    public List<?> generationAttempts(
+        @RequestParam(name = "days", defaultValue = "30") int days,
+        @RequestParam(name = "date", required = false) String date,
+        @RequestParam(name = "raw", defaultValue = "false") boolean raw
+    ) {
+        if (raw) {
+            LocalDate day = (date != null) ? parseDate(date) : LocalDate.now(clock);
+            return quizGenerationAttemptRepository.findByOccurredOnOrderByOccurredAtAsc(day);
+        }
+        int window = clamp(days, 1, MAX_ATTEMPT_DAYS);
+        return quizGenerationAttemptRepository.rollupSince(
+                LocalDate.now(clock).minusDays(window - 1L));
+    }
+
+    private static LocalDate parseDate(String date) {
+        try {
+            return LocalDate.parse(date);
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "date 형식이 올바르지 않습니다 (YYYY-MM-DD): " + date, e);
+        }
     }
 
     private static int clamp(int value, int min, int max) {
