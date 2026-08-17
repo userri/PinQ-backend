@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """생성 로그 → 하루치 집계 한 줄 (docs/data/scrape-stats.jsonl 에 append).
 
-쓰는 법 (검수 회차에서):
+🧊 **2026-08-17 동결. 새 회차에 쓰지 말 것 — 후계는 `scripts/attempt-stats.py` 다.**
+`quiz_generation_attempt` 테이블이 상위집합임이 8/17 당일 대조로 확정됐고, 이 파서에는 결함
+3종이 있다(용어 가드 반려 미계수 / `title=` 없는 줄의 카테고리 오귀속 / 날짜 필터 부재 —
+`docs/PENDING.md` 참조). **삭제하지 않는 이유**: 2026-08-12~08-16 은 로그가 링버퍼에서
+소멸해 `docs/data/scrape-stats.jsonl` 이 유일한 기록이고, 그 행들이 어떤 기준으로 만들어졌는지는
+이 파일에만 있다. 옛 행을 읽을 때의 참조로 남긴다.
+
+쓰는 법 (동결 이전 회차에서):
     ~/bin/pinq-quiz-fetch.sh logs 30 | python scripts/scrape-stats.py 2026-08-12
 
 왜 스크립트인가: 로그 원문은 하루 100KB 를 넘고 사유 분류에 판단이 들어간다.

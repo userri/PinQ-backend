@@ -40,20 +40,36 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 3. **전수 판정**: 문항별로 질문·해설·keyword·선지 4지를 기준별로 판정.
 4. **치명 결함 원문 보존 (치명 판정이 하나라도 있을 때만)**: 로그 항목 안에 해당 문항의 **교정 전 question·choices 4지(정답 표시)·explanation·keyword 를 원문 그대로** 인용 블록으로 남긴다. 요약·재서술 금지 — 글자 그대로. 발견 시점에 남기지 않으면 사라진다 (8/4 id 400 이 수기 교정으로 소실돼 유일한 명백 결함의 회귀 검증 표본이 없었다). 형식은 아래 "기록 형식" 참조.
 5. **기록 append**: 기존 형식 그대로 로그에 항목 추가.
-6. **손실 집계 한 줄 append + 페이지 갱신**: 조회한 생성 로그를 그날치 한 줄로 집계해 쌓는다.
+6. **손실 집계 한 줄 append + 페이지 갱신**: 그날치 시도 롤업을 한 줄로 집계해 쌓는다.
 
    ```bash
-   ~/bin/pinq-quiz-fetch.sh logs 30 | python scripts/scrape-stats.py YYYY-MM-DD >> docs/data/scrape-stats.jsonl
+   ~/bin/pinq-quiz-fetch.sh attempts 3 | python3 scripts/attempt-stats.py YYYY-MM-DD >> docs/data/attempt-stats.jsonl
    ```
 
-   그다음 `docs/data/scrape-stats.jsonl` 전체를 페이지의 `ROWS` 배열에 넣어 **기존 아티팩트를 갱신**한다
+   그다음 **두 파일을 날짜순으로 이어** 페이지의 `ROWS` 배열에 넣어 **기존 아티팩트를 갱신**한다
    (`url` 로 `https://claude.ai/code/artifact/eb92e8a6-5e59-4d32-80bb-152c4032aadd` 를 넘길 것 —
    안 넘기면 새 URL 이 생겨 사용자의 북마크가 낡는다. 아티팩트는 비공개라 URL 만으로는 열리지 않는다).
 
-   **왜 검수 회차에 묶는가**: 로그는 메모리 링버퍼라 서버가 재시작하면 그 이전이 사라진다.
-   그날 안 뽑으면 **영구 결손**이고, 빠진 날을 0 으로 채우면 안 된다(0 과 "못 봤다"는 다르다).
+   - `docs/data/scrape-stats.jsonl` — 2026-08-12~08-17, **동결**(로그 링버퍼 파서 산출물)
+   - `docs/data/attempt-stats.jsonl` — 2026-08-17~, `source: "table"`
+
+   ⚠️ **8/17 은 양쪽에 다 있다**(대조를 위해 일부러 남긴 유일한 겹침 날). 페이지에 넣을 때
+   **테이블 행을 쓰고 링버퍼 행은 버린다** — 둘 다 넣으면 그날이 두 번 세어진다.
+
+   **경계에 선을 긋는다.** 두 구간은 사유 분류 기준이 다르다 — 옛 행의 `reasons` 는 로그 문구를
+   5개 버킷(`off_category`·`duplicate`·`verify_failed`·`editorial`·`other`)으로 뭉갠 근사이고,
+   새 행은 서버가 남긴 reason 코드 그대로다(`TERM_REUSE_GUARD` 처럼 옛 파서가 **아예 못 세던**
+   사유가 있다). 새 행에는 `articles`(중복 제거 기사 수)가 없다 — 롤업은 집계라 복원이 안 되며,
+   **`attempts` 로 대신 채우지 말 것**. 페이지에서 두 구간을 한 계열로 이어 그리지 말고 구분한다.
+
+   **왜 갈아탔는가**: 8/17 에 양쪽이 함께 살아 있는 유일한 날 대조해 **테이블이 상위집합이고
+   테이블이 맞다**는 것을 확정했다(아티팩트 건너뜀 102건은 전부 DB 에 있었고 DB 에만 3건 더).
+   `scripts/scrape-stats.py` 결함 3종은 `docs/PENDING.md` 의 해당 항목에 있다.
+
+   **왜 여전히 검수 회차에 묶는가**: 이제 DB 라 그날 안 뽑아도 사라지지는 않는다. 다만 회차에
+   묶어두지 않으면 아무도 안 본다 — 빠진 날은 나중에 `attempts <날짜>` 로 메울 수 있다.
+   **빠진 날을 0 으로 채우지 말 것**(0 과 "못 봤다"는 다르다).
    사유 분류를 손으로 하지 말 것 — 기준이 회차마다 흔들리면 날짜 간 비교가 깨진다.
-   분류 기준은 `scripts/scrape-stats.py` 한 곳에만 둔다.
 7. **커밋 + push (항상 main, worktree 금지)**: 검수는 코드 변경이 없는 로그 append 이므로 **worktree 를 쓰지 말고 메인 레포(main 체크아웃)에서 직접 커밋·push** 한다 — cherry-pick 단계가 없어야 충돌이 원천 차단된다 (2026-07-23 스킬 파일 충돌 선례). `.md` 전용 push 는 CI 스킵. 만에 하나 worktree 세션이라면 [[quiz-audit-merge-to-main]] 절차로 폴백.
 8. **대기 작업 확인**: `docs/PENDING.md` 의 **`[검수]` 항목과 날짜가 박힌 항목**을 보고, 조건이 충족된 것("X 배포 후 Y" 류)이 있으면 사용자에게 보고한다. `[앱]`·`[문서]` 항목은 이 작업의 몫이 아니다 — 파일 전체를 읽지 않는다. 다단계 핸드오프의 복귀 트리거가 사람 기억뿐이라 후속 단계가 누락됐던 사고(7/23 목록 경량화 3단계) 재발 방지 장치.
 
@@ -76,7 +92,8 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 ~/bin/pinq-quiz-fetch.sh logs                 # 생성 로그의 SKIP·실패 사유 (기본 30h)
 ~/bin/pinq-quiz-fetch.sh counts               # 최근 10일 발행 수·id 범위
 ~/bin/pinq-quiz-fetch.sh tokens 30            # 날짜×kind 토큰 사용량 (DB — 재시작에도 남는다)
-~/bin/pinq-quiz-fetch.sh tokens 30            # 날짜×kind 토큰 사용량 (DB — 재시작에도 남는다)
+~/bin/pinq-quiz-fetch.sh attempts 30          # 손실 집계 롤업 (DB — 날짜×카테고리×단계×사유×회차)
+~/bin/pinq-quiz-fetch.sh attempts 2026-08-17  # 그날 원시 행 (기사 제목까지)
 ```
 
 - 접속 정보(프로덕션 주소·admin 시크릿)는 스크립트와 로컬 설정에만 있다 — **이 파일에 하드코딩 금지**(공개 레포).
@@ -84,7 +101,8 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
   (응답 필드: 선지 `choices[]`, 정답 `answer`, 순서 `orderNum`, 발행일 `quizDate`)
 - ⚠️ `logs` 는 **메모리 버퍼**라 컨테이너 재시작(배포) 이전 기록이 없다. 비어 있는 것과
   "SKIP 이 없었던 것"은 다르다 — 발행 수가 모자란 날 logs 가 비면 **원인 불명으로 기록**하고
-  없었다고 단정하지 않는다.
+  없었다고 단정하지 않는다. **손실 집계는 더 이상 이 버퍼를 타지 않는다**(6단계는 `attempts`).
+  `logs` 는 이제 원인 추적용 — 롤업이 세지 않는 기사 제목·URL·예외 메시지를 볼 때만 쓴다.
 - 스크립트가 실패하면 임의 재시도·원시 ssh 우회를 하지 말고, 원인(시크릿·네트워크·서버 상태)을
   보고하고 중단한다.
 
@@ -142,7 +160,8 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 
 | 실수 | 교정 |
 |---|---|
-| 손실 집계를 손으로 파싱 | `scripts/scrape-stats.py` 사용 — 사유 분류가 회차마다 흔들리면 날짜 간 비교가 깨진다 |
+| 손실 집계를 손으로 파싱 | `scripts/attempt-stats.py` 사용 — 사유 분류가 회차마다 흔들리면 날짜 간 비교가 깨진다 |
+| 손실 집계를 `logs` 에서 뽑음 | `attempts` 롤업이 SSOT — 링버퍼 파서는 8/16 에서 동결됐다(사유 3종 누락·카테고리 오귀속) |
 | 집계 페이지를 새 URL 로 발행 | 기존 아티팩트 `url` 을 넘겨 갱신 — 새로 만들면 사용자의 북마크가 낡는다 |
 | 다른 세션이 이미 검수한 날을 다시 검수 | 절차 0.5 — pull 뒤 **기록된 날짜를 빼고** 대상 날짜를 확정한 다음에야 판정을 시작한다(8/16 에 두 날치 검수를 통째로 버렸다) |
 | `pull` 없이 로그 append | 착수 전 `git pull --ff-only origin main` — 뒤처진 체크아웃에 붙이면 항목 순서가 깨지거나 push 가 거절된다(8/8·8/12 두 번) |
