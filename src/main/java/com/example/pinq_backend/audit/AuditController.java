@@ -107,7 +107,7 @@ public class AuditController {
     /**
      * 퀴즈 생성 시도의 손실 집계.
      *
-     * 기본은 날짜×카테고리×stage×reason 롤업이다 — 원시 행은 하루 50~160건이라
+     * 기본은 날짜×카테고리×회차(REGULAR/BACKFILL)×stage×reason 롤업이다 — 원시 행은 하루 50~160건이라
      * 그대로 뱉으면 읽을 수 없다. {@code raw=true} 는 그날 원시 행을 돌려주며,
      * <b>기사 제목으로 기사 풀 오염을 눈으로 확인하는 경로</b>다(2026-08-16 에
      * EXCHANGE_RATE 후보로 교보문고 베스트셀러가 들어온 것을 이렇게 봤다).

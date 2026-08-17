@@ -65,6 +65,39 @@ class QuizGenerationAttemptRepositoryTest {
         assertThat(published.getReason()).isNull();
     }
 
+    /**
+     * 밀린 날을 백필로 메우면 시도 수가 배로 뛴다 — 8/17 EXCHANGE_RATE 61건이 정기 22 /
+     * 백필 39 였다. run 축이 없으면 그 스파이크가 기사 풀 악화인지 백필인지 구분되지 않고,
+     * 손실률 분모가 회차 수만큼 부풀어 날짜 간 비교가 통째로 깨진다.
+     */
+    @Test
+    void 정기와_백필이_같은_사유여도_따로_집계된다() {
+        repository.deleteAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "REGULAR",
+                "환율", "정기 회차 기사", "https://example.com/r",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "BACKFILL",
+                "환율", "백필 회차 기사 1", "https://example.com/b1",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "BACKFILL",
+                "환율", "백필 회차 기사 2", "https://example.com/b2",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+
+        List<QuizGenerationAttemptRepository.DailyRow> rows =
+                repository.rollupSince(LocalDate.now(clock).minusDays(1));
+
+        // 다른 축(카테고리·stage·reason)이 전부 같아도 run 축으로 갈라져야 한다.
+        assertThat(rows).hasSize(2);
+        assertThat(rows).extracting(
+                        QuizGenerationAttemptRepository.DailyRow::getRunWindow,
+                        QuizGenerationAttemptRepository.DailyRow::getAttempts)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("REGULAR", 1L),
+                        org.assertj.core.groups.Tuple.tuple("BACKFILL", 2L));
+    }
+
     @Test
     void 하루치_원시_행을_시각순으로_돌려준다() {
         repository.deleteAll();
