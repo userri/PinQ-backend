@@ -1,0 +1,107 @@
+<title>퀴즈 생성 손실</title>
+<style>
+:root {
+  --ground: #f2f4f7; --panel: #ffffff; --ink: #14203a; --ink-soft: #55627d;
+  --hair: #d8dee9; --grid: #e7ecf3;
+  --regular: #2f5d8c; --backfill: #7fa8cd; --published: #1f7a5a;
+  --legacy-ink: #6b7386; --legacy-fill: #b9c0cf;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
+    --hair: #2a3546; --grid: #232d3f;
+    --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
+    --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
+  --hair: #2a3546; --grid: #232d3f;
+  --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
+  --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+    "Malgun Gothic", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.6;
+}
+.wrap { max-width: 940px; margin: 0 auto; padding: 40px 20px 72px; display: flex; flex-direction: column; gap: 34px; }
+h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink-soft); margin: 0 0 14px; }
+.sub { color: var(--ink-soft); font-size: 14px; margin: 6px 0 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border: 1px solid var(--hair); border-radius: 10px; padding: 15px 17px; }
+.tile .k { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.04em; }
+.tile .v { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; margin-top: 3px; }
+.tile .n { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.panel { background: var(--panel); border: 1px solid var(--hair); border-radius: 12px; padding: 22px 24px; }
+.days { display: flex; flex-direction: column; gap: 11px; }
+.day { display: grid; grid-template-columns: 92px 1fr 74px; align-items: center; gap: 14px; }
+.day .d { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.day.legacy .d { color: var(--legacy-ink); }
+.bar { height: 22px; background: var(--grid); border-radius: 4px; overflow: hidden; display: flex; }
+.bar span { display: block; height: 100%; }
+.s-regular { background: var(--regular); }
+.s-backfill { background: var(--backfill); }
+.legacy .s-regular { background: var(--legacy-fill); }
+.legacy .s-backfill { background: var(--legacy-fill); opacity: 0.55; }
+.day .n { font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.boundary { display: flex; align-items: center; gap: 12px; color: var(--ink-soft); font-size: 12px; margin: 4px 0; }
+.boundary::before, .boundary::after { content: ""; height: 1px; background: var(--hair); flex: 1; }
+.key { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; font-size: 12px; color: var(--ink-soft); }
+.key i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; vertical-align: -1px; margin-right: 6px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--hair); white-space: nowrap; }
+th { font-size: 12px; font-weight: 600; color: var(--ink-soft); letter-spacing: 0.04em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.reasons { display: flex; flex-direction: column; gap: 9px; }
+.reason { display: grid; grid-template-columns: 150px 1fr 42px; align-items: center; gap: 12px; font-size: 13px; }
+.reason .rb { height: 9px; background: var(--regular); border-radius: 3px; min-width: 2px; }
+.legacyblock .reason .rb { background: var(--legacy-fill); }
+.reason .rn { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.note { font-size: 13px; color: var(--ink-soft); border-left: 2px solid var(--hair); padding-left: 14px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 26px; }
+.stages { list-style: none; counter-reset: st; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.stages li { counter-increment: st; display: grid; grid-template-columns: 22px 168px 1fr; gap: 12px; align-items: baseline; font-size: 13px; }
+.stages li::before {
+  content: counter(st); font-variant-numeric: tabular-nums; font-size: 11px; font-weight: 700;
+  color: var(--ink-soft); border: 1px solid var(--hair); border-radius: 50%;
+  width: 20px; height: 20px; line-height: 18px; text-align: center; align-self: center;
+}
+.stages li b { font-weight: 600; }
+.stages li span { color: var(--ink-soft); }
+@media (max-width: 560px) { .stages li { grid-template-columns: 22px 1fr; } .stages li span { grid-column: 2; } }
+</style>
+<div class="wrap">
+  <header>
+    <h1>퀴즈 생성 손실</h1>
+    <p class="sub">하루에 기사 몇 건을 시도해서 몇 개가 발행됐는지, 나머지는 어디서 걸렀는지.</p>
+  </header>
+  <div class="tiles"><div class="tile"><div class="k">최근 집계일</div><div class="v">2026-08-17</div><div class="n">DB 기록</div></div><div class="tile"><div class="k">발행</div><div class="v">5개</div><div class="n">백필 1개 포함</div></div><div class="tile"><div class="k">시도</div><div class="v">107건</div><div class="n">백필 38건</div></div><div class="tile"><div class="k">발행까지 간 비율</div><div class="v">4.7%</div><div class="n">나머지 102건은 걸러짐</div></div></div>
+  <section class="panel">
+    <h2>날짜별 시도</h2>
+    <div class="days"><div class="day legacy"><div class="d">08-12</div><div class="bar"><span class="s-regular" style="width:56.77%" title="정기 88건"></span><span class="s-backfill" style="width:43.23%" title="백필 67건"></span></div><div class="n">155건</div></div><div class="day legacy"><div class="d">08-13</div><div class="bar"><span class="s-regular" style="width:50.32%" title="정기 78건"></span><span class="s-backfill" style="width:23.23%" title="백필 36건"></span></div><div class="n">114건</div></div><div class="day legacy"><div class="d">08-14</div><div class="bar"><span class="s-regular" style="width:26.45%" title="정기 41건"></span></div><div class="n">41건</div></div><div class="day legacy"><div class="d">08-16</div><div class="bar"><span class="s-regular" style="width:30.32%" title="정기 47건"></span></div><div class="n">47건</div></div><div class="boundary">여기부터 DB 기록 — 세는 기준이 바뀐다</div><div class="day"><div class="d">08-17</div><div class="bar"><span class="s-regular" style="width:44.52%" title="정기 69건"></span><span class="s-backfill" style="width:24.52%" title="백필 38건"></span></div><div class="n">107건</div></div></div>
+    <div class="key">
+      <span><i style="background:var(--regular)"></i>정기 회차</span>
+      <span><i style="background:var(--backfill)"></i>백필 회차</span>
+      <span><i style="background:var(--legacy-fill)"></i>옛 기준 (회차 구분 정확도 낮음)</span>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>2026-08-17 — 카테고리별</h2>
+    <div class="tablewrap"><table><tr><th>카테고리</th><th class="num">시도</th><th class="num">백필</th><th>어디까지 갔나</th></tr><tr><td>환율</td><td class="num">61</td><td class="num">38</td><td>기사 거르기 2 · 문제 만들기 37 · 규칙 검사 15 · 다른 모델이 풀어보기 6 · 발행 1</td></tr><tr><td>물가</td><td class="num">28</td><td class="num">—</td><td>문제 만들기 16 · 규칙 검사 7 · 다른 모델이 풀어보기 4 · 발행 1</td></tr><tr><td>금리</td><td class="num">14</td><td class="num">—</td><td>기사 거르기 2 · 문제 만들기 6 · 규칙 검사 5 · 발행 1</td></tr><tr><td>부동산</td><td class="num">3</td><td class="num">—</td><td>규칙 검사 2 · 발행 1</td></tr><tr><td>주식</td><td class="num">1</td><td class="num">—</td><td>발행 1</td></tr></table></div>
+<p class="note" style="margin:20px 0 14px">기사 한 건은 아래 관문을 순서대로 지난다. 표의 “어디까지 갔나”는 <b>그 관문에서 몇 건이 떨어졌는지</b>다.</p><ol class="stages"><li><b>기사 거르기</b><span>문제를 만들어보기도 전에 기사 단계에서 뺀 것. 사설이거나, 다른 카테고리가 이미 쓴 기사.</span></li><li><b>문제 만들기</b><span>만들어보라고 시켰는데 모델이 “이 기사로는 못 만들겠다”고 한 것. 응답이 깨졌거나 API 가 실패한 경우도 포함.</span></li><li><b>규칙 검사</b><span>만들어진 문제를 저장 전에 정해둔 규칙으로 검사해 반려한 것. 최근에 쓴 용어를 또 썼거나, 형식이 어긋난 경우.</span></li><li><b>다른 모델이 풀어보기</b><span>완성된 문제를 다른 회사 모델에게 풀려본 것. 답이 안 맞거나 정답이 둘 이상이면 반려.</span></li><li><b>발행</b><span>다 통과해서 실제로 나간 문제. 탈락이 아니다.</span></li></ol>
+  </section>
+  <section class="panel">
+    <h2>거른 사유</h2>
+    <div class="cols"><div class=""><h2>새 기준 — 2026-08-17</h2><div class="reasons"><div class="reason"><div>생성 모델이 건너뜀</div><div class="rb" style="width:100.00%"></div><div class="rn">59</div></div><div class="reason"><div>룰 반려</div><div class="rb" style="width:44.07%"></div><div class="rn">26</div></div><div class="reason"><div>검증 반려</div><div class="rb" style="width:16.95%"></div><div class="rn">10</div></div><div class="reason"><div>다른 카테고리가 이미 씀</div><div class="rb" style="width:3.39%"></div><div class="rn">2</div></div><div class="reason"><div>용어 재사용 가드</div><div class="rb" style="width:3.39%"></div><div class="rn">2</div></div><div class="reason"><div>사설</div><div class="rb" style="width:3.39%"></div><div class="rn">2</div></div><div class="reason"><div>용어가 카테고리와 같음</div><div class="rb" style="width:1.69%"></div><div class="rn">1</div></div></div></div><div class="legacyblock"><h2>옛 기준 — 2026-08-12</h2><div class="reasons"><div class="reason"><div>카테고리 이탈</div><div class="rb" style="width:100.00%"></div><div class="rn">80</div></div><div class="reason"><div>중복 기사</div><div class="rb" style="width:33.75%"></div><div class="rn">27</div></div><div class="reason"><div>사설</div><div class="rb" style="width:22.50%"></div><div class="rn">18</div></div><div class="reason"><div>검증 반려</div><div class="rb" style="width:21.25%"></div><div class="rn">17</div></div><div class="reason"><div>기타</div><div class="rb" style="width:16.25%"></div><div class="rn">13</div></div></div></div></div>
+    <p class="note" style="margin-top:22px">
+      두 구간은 세는 기준이 다르다. 옛 기준은 로그 문구를 다섯 덩어리로 뭉갠 근사라
+      용어 가드 반려처럼 <b>아예 못 세던 사유</b>가 있었고, 카테고리도 일부 잘못 붙었다.
+      새 기준은 서버가 기록한 사유를 그대로 쓴다. 그래서 두 구간의 막대는 이어 보지 않는다.
+    </p>
+  </section>
+</div>

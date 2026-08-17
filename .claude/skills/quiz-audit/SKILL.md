@@ -46,21 +46,30 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
    ~/bin/pinq-quiz-fetch.sh attempts 3 | python3 scripts/attempt-stats.py YYYY-MM-DD >> docs/data/attempt-stats.jsonl
    ```
 
-   그다음 **두 파일을 날짜순으로 이어** 페이지의 `ROWS` 배열에 넣어 **기존 아티팩트를 갱신**한다
-   (`url` 로 `https://claude.ai/code/artifact/eb92e8a6-5e59-4d32-80bb-152c4032aadd` 를 넘길 것 —
-   안 넘기면 새 URL 이 생겨 사용자의 북마크가 낡는다. 아티팩트는 비공개라 URL 만으로는 열리지 않는다).
+   그다음 **페이지를 다시 만든다**. 손으로 그리지 말 것 — 명령이 전부 한다.
 
+   ```bash
+   python3 scripts/build-loss-page.py       # → docs/data/loss-stats.html (커밋 대상)
+   ```
+
+   결과물은 스크립트 없는 자체완결 HTML 이라 레포에서 열면 그대로 보인다. 사용자에게 보여줄
+   때는 이 파일을 그대로 쓴다. 아티팩트 주소를 갱신할 일이 있으면 같은 파일을 올리되
+   **`url` 로 `https://claude.ai/code/artifact/eb92e8a6-5e59-4d32-80bb-152c4032aadd` 를 넘길 것**
+   (안 넘기면 새 URL 이 생겨 사용자의 북마크가 낡는다).
+
+   ⚠️ **페이지를 손으로 다시 그리지 말 것.** 예전에는 회차마다 새로 그려서 모양·기준이 흔들렸다.
+   겹치는 날 중복 계수, 두 구간을 잇는 실수, 빈 그래프 방지가 전부 이 스크립트 안에 있다.
+
+   입력 파일 둘 (스크립트가 알아서 읽는다):
    - `docs/data/scrape-stats.jsonl` — 2026-08-12~08-17, **동결**(로그 링버퍼 파서 산출물)
    - `docs/data/attempt-stats.jsonl` — 2026-08-17~, `source: "table"`
-
-   ⚠️ **8/17 은 양쪽에 다 있다**(대조를 위해 일부러 남긴 유일한 겹침 날). 페이지에 넣을 때
-   **테이블 행을 쓰고 링버퍼 행은 버린다** — 둘 다 넣으면 그날이 두 번 세어진다.
 
    **경계에 선을 긋는다.** 두 구간은 사유 분류 기준이 다르다 — 옛 행의 `reasons` 는 로그 문구를
    5개 버킷(`off_category`·`duplicate`·`verify_failed`·`editorial`·`other`)으로 뭉갠 근사이고,
    새 행은 서버가 남긴 reason 코드 그대로다(`TERM_REUSE_GUARD` 처럼 옛 파서가 **아예 못 세던**
    사유가 있다). 새 행에는 `articles`(중복 제거 기사 수)가 없다 — 롤업은 집계라 복원이 안 되며,
-   **`attempts` 로 대신 채우지 말 것**. 페이지에서 두 구간을 한 계열로 이어 그리지 말고 구분한다.
+   **`attempts` 로 대신 채우지 말 것**. 8/17 은 양쪽에 다 있는 유일한 겹침 날이라 대조 표본으로
+   남겼고, 스크립트가 테이블 행만 쓴다.
 
    **왜 갈아탔는가**: 8/17 에 양쪽이 함께 살아 있는 유일한 날 대조해 **테이블이 상위집합이고
    테이블이 맞다**는 것을 확정했다(아티팩트 건너뜀 102건은 전부 DB 에 있었고 DB 에만 3건 더).
@@ -162,6 +171,7 @@ description: Use when asked to audit today's published quizzes — "오늘 퀴�
 |---|---|
 | 손실 집계를 손으로 파싱 | `scripts/attempt-stats.py` 사용 — 사유 분류가 회차마다 흔들리면 날짜 간 비교가 깨진다 |
 | 손실 집계를 `logs` 에서 뽑음 | `attempts` 롤업이 SSOT — 링버퍼 파서는 8/16 에서 동결됐다(사유 3종 누락·카테고리 오귀속) |
+| 집계 페이지를 손으로 그림 | `scripts/build-loss-page.py` 사용 — 회차마다 모양·기준이 흔들린다 |
 | 집계 페이지를 새 URL 로 발행 | 기존 아티팩트 `url` 을 넘겨 갱신 — 새로 만들면 사용자의 북마크가 낡는다 |
 | 다른 세션이 이미 검수한 날을 다시 검수 | 절차 0.5 — pull 뒤 **기록된 날짜를 빼고** 대상 날짜를 확정한 다음에야 판정을 시작한다(8/16 에 두 날치 검수를 통째로 버렸다) |
 | `pull` 없이 로그 append | 착수 전 `git pull --ff-only origin main` — 뒤처진 체크아웃에 붙이면 항목 순서가 깨지거나 push 가 거절된다(8/8·8/12 두 번) |
