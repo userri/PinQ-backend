@@ -70,6 +70,41 @@ STAGE_NOTE = {
 STAGE_ORDER = ["PREFILTER", "GENERATE", "VALIDATE", "VERIFY", "PUBLISHED"]
 
 
+# 사유별 색. 두 기준에 같은 뜻이 있으면 같은 색을 준다 — 경계를 넘어도 눈이 따라간다.
+REASON_COLOR = {
+    "카테고리 이탈": "var(--r-off)",
+    "다른 카테고리가 이미 씀": "var(--r-off)",
+    "중복 기사": "var(--r-dup)",
+    "검증 반려": "var(--r-ver)",
+    "사설": "var(--r-edi)",
+    "기타": "var(--r-oth)",
+    "미분류": "var(--r-oth)",
+    "생성 모델이 건너뜀": "var(--r-skip)",
+    "룰 반려": "var(--r-rule)",
+    "용어 재사용 가드": "var(--r-term)",
+    "용어가 카테고리와 같음": "var(--r-term)",
+}
+REASON_NOTE = {
+    "생성 모델이 건너뜀": "모델이 이 기사로는 문제를 못 만들겠다고 한 것",
+    "룰 반려": "만든 문제가 정해둔 규칙에 걸린 것",
+    "검증 반려": "다른 모델이 풀어봤더니 답이 안 맞은 것",
+    "다른 카테고리가 이미 씀": "같은 기사를 옆 카테고리가 먼저 가져간 것",
+    "용어 재사용 가드": "최근에 낸 용어를 또 쓴 것",
+    "용어가 카테고리와 같음": "용어가 카테고리 이름 그 자체인 것",
+    "사설": "사설·칼럼이라 기사 단계에서 뺀 것",
+    "중복 기사": "같은 기사를 또 집어온 것",
+    "카테고리 이탈": "검색이 그 주제와 무관한 기사를 끌어온 것 (옛 기준)",
+    "기타": "옛 기준에서 분류 밖으로 밀린 것",
+}
+
+# 관측이 없는 날. 0 으로 채우지 않는다 — 0 과 "못 봤다"는 다르다.
+GAPS = [
+    ("2026-08-15", "검수가 하루 밀려 링버퍼가 비워진 뒤 조회했다 — 영구 결손"),
+]
+
+PUBLISH_TARGET = 5  # 하루 슬롯 수
+
+
 def read_rows(path):
     if not path.exists():
         return []
@@ -97,8 +132,14 @@ def normalize(row, source):
         })
     cats.sort(key=lambda c: -c["attempts"])
 
+    day_reasons = {}
+    for c in cats:
+        for r in c["reasons"]:
+            day_reasons[r["label"]] = day_reasons.get(r["label"], 0) + r["n"]
+
     published = row.get("published", {})
     return {
+        "reasons": sorted(day_reasons.items(), key=lambda kv: -kv[1]),
         "date": row["date"],
         "source": source,
         "attempts": sum(c["attempts"] for c in cats),
@@ -127,21 +168,27 @@ PAGE = """<title>퀴즈 생성 손실</title>
   --ground: #f2f4f7; --panel: #ffffff; --ink: #14203a; --ink-soft: #55627d;
   --hair: #d8dee9; --grid: #e7ecf3;
   --regular: #2f5d8c; --backfill: #7fa8cd; --published: #1f7a5a;
-  --legacy-ink: #6b7386; --legacy-fill: #b9c0cf;
+  --legacy-ink: #6b7386; --legacy-fill: #b9c0cf; --short: #b4361a;
+  --r-skip: #2f6f9e; --r-rule: #c2703a; --r-ver: #6d5bb5; --r-term: #8a6ea8;
+  --r-off: #a8582f; --r-dup: #5f7a6a; --r-edi: #7d8f6b; --r-oth: #9aa5a1;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
     --hair: #2a3546; --grid: #232d3f;
     --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
-    --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+    --legacy-ink: #8a94a8; --legacy-fill: #414d63; --short: #e8735a;
+  --r-skip: #63a5d4; --r-rule: #e0925c; --r-ver: #9b8ae0; --r-term: #b09ad4;
+  --r-off: #d4885f; --r-dup: #8aa895; --r-edi: #a3b58c; --r-oth: #7b8884;
   }
 }
 :root[data-theme="dark"] {
   --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
   --hair: #2a3546; --grid: #232d3f;
   --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
-  --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+  --legacy-ink: #8a94a8; --legacy-fill: #414d63; --short: #e8735a;
+  --r-skip: #63a5d4; --r-rule: #e0925c; --r-ver: #9b8ae0; --r-term: #b09ad4;
+  --r-off: #d4885f; --r-dup: #8aa895; --r-edi: #a3b58c; --r-oth: #7b8884;
 }
 * { box-sizing: border-box; }
 body {
@@ -197,6 +244,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .stages li b { font-weight: 600; }
 .stages li span { color: var(--ink-soft); }
 @media (max-width: 560px) { .stages li { grid-template-columns: 22px 1fr; } .stages li span { grid-column: 2; } }
+.trend td.d { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; }
+.trend .of { color: var(--ink-soft); font-size: 12px; }
+.trend b.short { color: var(--short); }
+.trend .bar { min-width: 3px; }
+.trend td:last-child { width: 38%; padding-right: 0; }
+tr.bound td, tr.gap td { font-size: 12px; color: var(--ink-soft); padding: 8px 0; }
+tr.bound td { border-bottom: 1px solid var(--hair); }
+tr.gap td { border-bottom: 1px dashed var(--hair); }
+.rlegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 18px; font-size: 12.5px; }
+.rlegend div { display: grid; grid-template-columns: 11px auto 1fr; gap: 8px; align-items: baseline; }
+.rlegend .sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+.rlegend b { font-weight: 600; white-space: nowrap; }
+.rlegend span:not(.sw) { color: var(--ink-soft); }
+.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); }
 </style>
 <div class="wrap">
   <header>
@@ -205,13 +266,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   </header>
   <div class="tiles">__TILES__</div>
   <section class="panel">
-    <h2>날짜별 시도</h2>
-    <div class="days">__DAYS__</div>
-    <div class="key">
-      <span><i style="background:var(--regular)"></i>정기 회차</span>
-      <span><i style="background:var(--backfill)"></i>백필 회차</span>
-      <span><i style="background:var(--legacy-fill)"></i>옛 기준 (회차 구분 정확도 낮음)</span>
-    </div>
+    <h2>날짜별 추이</h2>
+    <p class="note" style="margin:0 0 16px">막대 길이는 날짜끼리 비교할 수 있다(가장 많이 시도한 날이 100%).
+      막대 안의 색은 <b>그날 무엇 때문에 버렸는지</b>다. 발행이 5 미만인 날은 숫자가 붉다.</p>
+    <div class="tablewrap"><table class="trend">__DAYS__</table></div>
+__RLEGEND__
   </section>
   <section class="panel">
     <h2>__LATEST__ — 카테고리별</h2>
@@ -241,7 +300,7 @@ def render_tiles(latest):
     rate = 100 * latest["published"] / latest["attempts"] if latest["attempts"] else 0
     tiles = [
         ("최근 집계일", latest["date"], "DB 기록" if latest["source"] == "table" else "옛 로그 기록"),
-        ("발행", f"{latest['published']}개",
+        ("발행", f"{latest['published']}/{PUBLISH_TARGET}",
          f"백필 {latest['publishedBackfill']}개 포함" if latest["publishedBackfill"] else "전부 정기 회차"),
         ("시도", f"{latest['attempts']}건", f"백필 {latest['backfill']}건"),
         ("발행까지 간 비율", f"{rate:.1f}%", f"나머지 {lost}건은 걸러짐"),
@@ -254,35 +313,67 @@ def render_tiles(latest):
 
 
 def render_days(days):
+    """날짜별 추이. 발행·시도·회차와 그날의 사유 구성을 한 줄에 놓는다."""
     top = max(d["attempts"] for d in days) or 1
-    out = []
+    rows = ['<tr><th>날짜</th><th class="num">발행</th><th class="num">시도</th>'
+            '<th class="num">정기</th><th class="num">백필</th>'
+            '<th style="width:38%">사유 구성</th></tr>']
     drew_boundary = False
-    for d in days:
+    for i, d in enumerate(days):
         if not drew_boundary and d["source"] == "table":
-            out.append('<div class="boundary">여기부터 DB 기록 — 세는 기준이 바뀐다</div>')
+            rows.append('<tr class="bound"><td colspan="6">여기부터 DB 기록 — '
+                        '세는 기준이 바뀐다. 위아래 막대를 이어 보지 말 것</td></tr>')
             drew_boundary = True
-        segs = ""
-        for cls, label, n in (("s-regular", "정기", d["regular"]), ("s-backfill", "백필", d["backfill"])):
-            if n:
-                segs += (f'<span class="{cls}" style="width:{100 * n / top:.2f}%" '
-                         f'title="{label} {n}건"></span>')
-        cls = " legacy" if d["source"] == "legacy" else ""
-        out.append(
-            f'<div class="day{cls}"><div class="d">{esc(d["date"][5:])}</div>'
-            f'<div class="bar">{segs}</div><div class="n">{d["attempts"]}건</div></div>'
+
+        losses = d["attempts"] - d["published"]
+        segs = "".join(
+            f'<span style="width:{100 * n / max(losses, 1):.2f}%;'
+            f'background:{REASON_COLOR.get(label, "var(--r-oth)")}" title="{esc(label)} {n}건"></span>'
+            for label, n in d["reasons"]
         )
-    return "".join(out)
+        scale = 100 * d["attempts"] / top
+        pub = d["published"]
+        pub_cls = ' class="short"' if pub < PUBLISH_TARGET else ""
+        rows.append(
+            f'<tr><td class="d">{esc(d["date"])}</td>'
+            f'<td class="num"><b{pub_cls}>{pub}</b><span class="of">/{PUBLISH_TARGET}</span></td>'
+            f'<td class="num">{d["attempts"]}</td>'
+            f'<td class="num">{d["regular"] or "·"}</td><td class="num">{d["backfill"] or "·"}</td>'
+            f'<td><div class="bar" style="width:{scale:.2f}%">{segs}</div></td></tr>'
+        )
+
+        nxt = days[i + 1]["date"] if i + 1 < len(days) else None
+        for gap_date, why in GAPS:
+            if nxt and d["date"] < gap_date < nxt:
+                rows.append(f'<tr class="gap"><td colspan="6">{esc(gap_date)} — 관측 없음 · {esc(why)}</td></tr>')
+    return "".join(rows)
+
+
+def render_reason_legend(days):
+    """쓰인 사유만 골라 뜻을 단다."""
+    seen = {}
+    for d in days:
+        for label, _ in d["reasons"]:
+            seen.setdefault(label, d["source"])
+    items = "".join(
+        f'<div><span class="sw" style="background:{REASON_COLOR.get(label, "var(--r-oth)")}"></span>'
+        f'<b>{esc(label)}</b><span>{esc(REASON_NOTE.get(label, ""))}</span>'
+        f'{"<em>옛 기준</em>" if src == "legacy" else ""}</div>'
+        for label, src in seen.items()
+    )
+    return f'<div class="rlegend">{items}</div>'
 
 
 def render_cats(latest):
     has_stages = any(c["stages"] for c in latest["categories"])
-    rows = ['<tr><th>카테고리</th><th class="num">시도</th><th class="num">백필</th>'
-            '<th>어디까지 갔나</th></tr>']
+    rows = ['<tr><th>카테고리</th><th class="num">시도</th><th class="num">정기</th>'
+            '<th class="num">백필</th><th>어디까지 갔나</th></tr>']
     for c in latest["categories"]:
         stages = " · ".join(f'{s["label"]} {s["n"]}' for s in c["stages"]) if has_stages else "—"
         rows.append(
             f'<tr><td>{esc(c["name"])}</td><td class="num">{c["attempts"]}</td>'
-            f'<td class="num">{c["backfill"] or "—"}</td><td>{esc(stages)}</td></tr>'
+            f'<td class="num">{c["regular"] or "·"}</td>'
+            f'<td class="num">{c["backfill"] or "·"}</td><td>{esc(stages)}</td></tr>'
         )
     return "".join(rows)
 
@@ -340,11 +431,13 @@ def main():
     html = (PAGE
             .replace("__TILES__", render_tiles(latest))
             .replace("__DAYS__", render_days(days))
+            .replace("__RLEGEND__", render_reason_legend(days))
             .replace("__LATEST__", esc(latest["date"]))
             .replace("__CATS__", render_cats(latest))
             .replace("__LEGEND__", render_stage_legend())
             .replace("__REASONS__", render_reasons(days, latest)))
-    for mark in ("__TILES__", "__DAYS__", "__LATEST__", "__CATS__", "__LEGEND__", "__REASONS__"):
+    for mark in ("__TILES__", "__DAYS__", "__RLEGEND__", "__LATEST__", "__CATS__",
+                 "__LEGEND__", "__REASONS__"):
         if mark in html:
             raise SystemExit(f"오류: {mark} 가 치환되지 않았다 — 빈 그래프가 나갈 뻔했다.")
     pathlib.Path(args.out).write_text(html, encoding="utf-8")

@@ -4,21 +4,27 @@
   --ground: #f2f4f7; --panel: #ffffff; --ink: #14203a; --ink-soft: #55627d;
   --hair: #d8dee9; --grid: #e7ecf3;
   --regular: #2f5d8c; --backfill: #7fa8cd; --published: #1f7a5a;
-  --legacy-ink: #6b7386; --legacy-fill: #b9c0cf;
+  --legacy-ink: #6b7386; --legacy-fill: #b9c0cf; --short: #b4361a;
+  --r-skip: #2f6f9e; --r-rule: #c2703a; --r-ver: #6d5bb5; --r-term: #8a6ea8;
+  --r-off: #a8582f; --r-dup: #5f7a6a; --r-edi: #7d8f6b; --r-oth: #9aa5a1;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
     --hair: #2a3546; --grid: #232d3f;
     --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
-    --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+    --legacy-ink: #8a94a8; --legacy-fill: #414d63; --short: #e8735a;
+  --r-skip: #63a5d4; --r-rule: #e0925c; --r-ver: #9b8ae0; --r-term: #b09ad4;
+  --r-off: #d4885f; --r-dup: #8aa895; --r-edi: #a3b58c; --r-oth: #7b8884;
   }
 }
 :root[data-theme="dark"] {
   --ground: #10151f; --panel: #182031; --ink: #e6ecf7; --ink-soft: #97a3bb;
   --hair: #2a3546; --grid: #232d3f;
   --regular: #6fa6dd; --backfill: #3d6a95; --published: #4cbf95;
-  --legacy-ink: #8a94a8; --legacy-fill: #414d63;
+  --legacy-ink: #8a94a8; --legacy-fill: #414d63; --short: #e8735a;
+  --r-skip: #63a5d4; --r-rule: #e0925c; --r-ver: #9b8ae0; --r-term: #b09ad4;
+  --r-off: #d4885f; --r-dup: #8aa895; --r-edi: #a3b58c; --r-oth: #7b8884;
 }
 * { box-sizing: border-box; }
 body {
@@ -74,25 +80,37 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .stages li b { font-weight: 600; }
 .stages li span { color: var(--ink-soft); }
 @media (max-width: 560px) { .stages li { grid-template-columns: 22px 1fr; } .stages li span { grid-column: 2; } }
+.trend td.d { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; }
+.trend .of { color: var(--ink-soft); font-size: 12px; }
+.trend b.short { color: var(--short); }
+.trend .bar { min-width: 3px; }
+.trend td:last-child { width: 38%; padding-right: 0; }
+tr.bound td, tr.gap td { font-size: 12px; color: var(--ink-soft); padding: 8px 0; }
+tr.bound td { border-bottom: 1px solid var(--hair); }
+tr.gap td { border-bottom: 1px dashed var(--hair); }
+.rlegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 18px; font-size: 12.5px; }
+.rlegend div { display: grid; grid-template-columns: 11px auto 1fr; gap: 8px; align-items: baseline; }
+.rlegend .sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+.rlegend b { font-weight: 600; white-space: nowrap; }
+.rlegend span:not(.sw) { color: var(--ink-soft); }
+.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); }
 </style>
 <div class="wrap">
   <header>
     <h1>퀴즈 생성 손실</h1>
     <p class="sub">하루에 기사 몇 건을 시도해서 몇 개가 발행됐는지, 나머지는 어디서 걸렀는지.</p>
   </header>
-  <div class="tiles"><div class="tile"><div class="k">최근 집계일</div><div class="v">2026-08-17</div><div class="n">DB 기록</div></div><div class="tile"><div class="k">발행</div><div class="v">5개</div><div class="n">백필 1개 포함</div></div><div class="tile"><div class="k">시도</div><div class="v">107건</div><div class="n">백필 38건</div></div><div class="tile"><div class="k">발행까지 간 비율</div><div class="v">4.7%</div><div class="n">나머지 102건은 걸러짐</div></div></div>
+  <div class="tiles"><div class="tile"><div class="k">최근 집계일</div><div class="v">2026-08-17</div><div class="n">DB 기록</div></div><div class="tile"><div class="k">발행</div><div class="v">5/5</div><div class="n">백필 1개 포함</div></div><div class="tile"><div class="k">시도</div><div class="v">107건</div><div class="n">백필 38건</div></div><div class="tile"><div class="k">발행까지 간 비율</div><div class="v">4.7%</div><div class="n">나머지 102건은 걸러짐</div></div></div>
   <section class="panel">
-    <h2>날짜별 시도</h2>
-    <div class="days"><div class="day legacy"><div class="d">08-12</div><div class="bar"><span class="s-regular" style="width:56.77%" title="정기 88건"></span><span class="s-backfill" style="width:43.23%" title="백필 67건"></span></div><div class="n">155건</div></div><div class="day legacy"><div class="d">08-13</div><div class="bar"><span class="s-regular" style="width:50.32%" title="정기 78건"></span><span class="s-backfill" style="width:23.23%" title="백필 36건"></span></div><div class="n">114건</div></div><div class="day legacy"><div class="d">08-14</div><div class="bar"><span class="s-regular" style="width:26.45%" title="정기 41건"></span></div><div class="n">41건</div></div><div class="day legacy"><div class="d">08-16</div><div class="bar"><span class="s-regular" style="width:30.32%" title="정기 47건"></span></div><div class="n">47건</div></div><div class="boundary">여기부터 DB 기록 — 세는 기준이 바뀐다</div><div class="day"><div class="d">08-17</div><div class="bar"><span class="s-regular" style="width:44.52%" title="정기 69건"></span><span class="s-backfill" style="width:24.52%" title="백필 38건"></span></div><div class="n">107건</div></div></div>
-    <div class="key">
-      <span><i style="background:var(--regular)"></i>정기 회차</span>
-      <span><i style="background:var(--backfill)"></i>백필 회차</span>
-      <span><i style="background:var(--legacy-fill)"></i>옛 기준 (회차 구분 정확도 낮음)</span>
-    </div>
+    <h2>날짜별 추이</h2>
+    <p class="note" style="margin:0 0 16px">막대 길이는 날짜끼리 비교할 수 있다(가장 많이 시도한 날이 100%).
+      막대 안의 색은 <b>그날 무엇 때문에 버렸는지</b>다. 발행이 5 미만인 날은 숫자가 붉다.</p>
+    <div class="tablewrap"><table class="trend"><tr><th>날짜</th><th class="num">발행</th><th class="num">시도</th><th class="num">정기</th><th class="num">백필</th><th style="width:38%">사유 구성</th></tr><tr><td class="d">2026-08-12</td><td class="num"><b>5</b><span class="of">/5</span></td><td class="num">155</td><td class="num">88</td><td class="num">67</td><td><div class="bar" style="width:100.00%"><span style="width:53.33%;background:var(--r-off)" title="카테고리 이탈 80건"></span><span style="width:18.00%;background:var(--r-dup)" title="중복 기사 27건"></span><span style="width:12.00%;background:var(--r-edi)" title="사설 18건"></span><span style="width:11.33%;background:var(--r-ver)" title="검증 반려 17건"></span><span style="width:8.67%;background:var(--r-oth)" title="기타 13건"></span></div></td></tr><tr><td class="d">2026-08-13</td><td class="num"><b>5</b><span class="of">/5</span></td><td class="num">114</td><td class="num">78</td><td class="num">36</td><td><div class="bar" style="width:73.55%"><span style="width:39.45%;background:var(--r-off)" title="카테고리 이탈 43건"></span><span style="width:27.52%;background:var(--r-ver)" title="검증 반려 30건"></span><span style="width:25.69%;background:var(--r-dup)" title="중복 기사 28건"></span><span style="width:9.17%;background:var(--r-oth)" title="기타 10건"></span><span style="width:2.75%;background:var(--r-edi)" title="사설 3건"></span></div></td></tr><tr><td class="d">2026-08-14</td><td class="num"><b>5</b><span class="of">/5</span></td><td class="num">41</td><td class="num">41</td><td class="num">·</td><td><div class="bar" style="width:26.45%"><span style="width:44.44%;background:var(--r-ver)" title="검증 반려 16건"></span><span style="width:38.89%;background:var(--r-off)" title="카테고리 이탈 14건"></span><span style="width:25.00%;background:var(--r-dup)" title="중복 기사 9건"></span><span style="width:2.78%;background:var(--r-edi)" title="사설 1건"></span><span style="width:2.78%;background:var(--r-oth)" title="기타 1건"></span></div></td></tr><tr class="gap"><td colspan="6">2026-08-15 — 관측 없음 · 검수가 하루 밀려 링버퍼가 비워진 뒤 조회했다 — 영구 결손</td></tr><tr><td class="d">2026-08-16</td><td class="num"><b>5</b><span class="of">/5</span></td><td class="num">47</td><td class="num">47</td><td class="num">·</td><td><div class="bar" style="width:30.32%"><span style="width:42.86%;background:var(--r-off)" title="카테고리 이탈 18건"></span><span style="width:30.95%;background:var(--r-ver)" title="검증 반려 13건"></span><span style="width:28.57%;background:var(--r-dup)" title="중복 기사 12건"></span><span style="width:9.52%;background:var(--r-oth)" title="기타 4건"></span></div></td></tr><tr class="bound"><td colspan="6">여기부터 DB 기록 — 세는 기준이 바뀐다. 위아래 막대를 이어 보지 말 것</td></tr><tr><td class="d">2026-08-17</td><td class="num"><b>5</b><span class="of">/5</span></td><td class="num">107</td><td class="num">69</td><td class="num">38</td><td><div class="bar" style="width:69.03%"><span style="width:57.84%;background:var(--r-skip)" title="생성 모델이 건너뜀 59건"></span><span style="width:25.49%;background:var(--r-rule)" title="룰 반려 26건"></span><span style="width:9.80%;background:var(--r-ver)" title="검증 반려 10건"></span><span style="width:1.96%;background:var(--r-off)" title="다른 카테고리가 이미 씀 2건"></span><span style="width:1.96%;background:var(--r-term)" title="용어 재사용 가드 2건"></span><span style="width:1.96%;background:var(--r-edi)" title="사설 2건"></span><span style="width:0.98%;background:var(--r-term)" title="용어가 카테고리와 같음 1건"></span></div></td></tr></table></div>
+<div class="rlegend"><div><span class="sw" style="background:var(--r-off)"></span><b>카테고리 이탈</b><span>검색이 그 주제와 무관한 기사를 끌어온 것 (옛 기준)</span><em>옛 기준</em></div><div><span class="sw" style="background:var(--r-dup)"></span><b>중복 기사</b><span>같은 기사를 또 집어온 것</span><em>옛 기준</em></div><div><span class="sw" style="background:var(--r-edi)"></span><b>사설</b><span>사설·칼럼이라 기사 단계에서 뺀 것</span><em>옛 기준</em></div><div><span class="sw" style="background:var(--r-ver)"></span><b>검증 반려</b><span>다른 모델이 풀어봤더니 답이 안 맞은 것</span><em>옛 기준</em></div><div><span class="sw" style="background:var(--r-oth)"></span><b>기타</b><span>옛 기준에서 분류 밖으로 밀린 것</span><em>옛 기준</em></div><div><span class="sw" style="background:var(--r-skip)"></span><b>생성 모델이 건너뜀</b><span>모델이 이 기사로는 문제를 못 만들겠다고 한 것</span></div><div><span class="sw" style="background:var(--r-rule)"></span><b>룰 반려</b><span>만든 문제가 정해둔 규칙에 걸린 것</span></div><div><span class="sw" style="background:var(--r-off)"></span><b>다른 카테고리가 이미 씀</b><span>같은 기사를 옆 카테고리가 먼저 가져간 것</span></div><div><span class="sw" style="background:var(--r-term)"></span><b>용어 재사용 가드</b><span>최근에 낸 용어를 또 쓴 것</span></div><div><span class="sw" style="background:var(--r-term)"></span><b>용어가 카테고리와 같음</b><span>용어가 카테고리 이름 그 자체인 것</span></div></div>
   </section>
   <section class="panel">
     <h2>2026-08-17 — 카테고리별</h2>
-    <div class="tablewrap"><table><tr><th>카테고리</th><th class="num">시도</th><th class="num">백필</th><th>어디까지 갔나</th></tr><tr><td>환율</td><td class="num">61</td><td class="num">38</td><td>기사 거르기 2 · 문제 만들기 37 · 규칙 검사 15 · 다른 모델이 풀어보기 6 · 발행 1</td></tr><tr><td>물가</td><td class="num">28</td><td class="num">—</td><td>문제 만들기 16 · 규칙 검사 7 · 다른 모델이 풀어보기 4 · 발행 1</td></tr><tr><td>금리</td><td class="num">14</td><td class="num">—</td><td>기사 거르기 2 · 문제 만들기 6 · 규칙 검사 5 · 발행 1</td></tr><tr><td>부동산</td><td class="num">3</td><td class="num">—</td><td>규칙 검사 2 · 발행 1</td></tr><tr><td>주식</td><td class="num">1</td><td class="num">—</td><td>발행 1</td></tr></table></div>
+    <div class="tablewrap"><table><tr><th>카테고리</th><th class="num">시도</th><th class="num">정기</th><th class="num">백필</th><th>어디까지 갔나</th></tr><tr><td>환율</td><td class="num">61</td><td class="num">23</td><td class="num">38</td><td>기사 거르기 2 · 문제 만들기 37 · 규칙 검사 15 · 다른 모델이 풀어보기 6 · 발행 1</td></tr><tr><td>물가</td><td class="num">28</td><td class="num">28</td><td class="num">·</td><td>문제 만들기 16 · 규칙 검사 7 · 다른 모델이 풀어보기 4 · 발행 1</td></tr><tr><td>금리</td><td class="num">14</td><td class="num">14</td><td class="num">·</td><td>기사 거르기 2 · 문제 만들기 6 · 규칙 검사 5 · 발행 1</td></tr><tr><td>부동산</td><td class="num">3</td><td class="num">3</td><td class="num">·</td><td>규칙 검사 2 · 발행 1</td></tr><tr><td>주식</td><td class="num">1</td><td class="num">1</td><td class="num">·</td><td>발행 1</td></tr></table></div>
 <p class="note" style="margin:20px 0 14px">기사 한 건은 아래 관문을 순서대로 지난다. 표의 “어디까지 갔나”는 <b>그 관문에서 몇 건이 떨어졌는지</b>다.</p><ol class="stages"><li><b>기사 거르기</b><span>문제를 만들어보기도 전에 기사 단계에서 뺀 것. 사설이거나, 다른 카테고리가 이미 쓴 기사.</span></li><li><b>문제 만들기</b><span>만들어보라고 시켰는데 모델이 “이 기사로는 못 만들겠다”고 한 것. 응답이 깨졌거나 API 가 실패한 경우도 포함.</span></li><li><b>규칙 검사</b><span>만들어진 문제를 저장 전에 정해둔 규칙으로 검사해 반려한 것. 최근에 쓴 용어를 또 썼거나, 형식이 어긋난 경우.</span></li><li><b>다른 모델이 풀어보기</b><span>완성된 문제를 다른 회사 모델에게 풀려본 것. 답이 안 맞거나 정답이 둘 이상이면 반려.</span></li><li><b>발행</b><span>다 통과해서 실제로 나간 문제. 탈락이 아니다.</span></li></ol>
   </section>
   <section class="panel">
