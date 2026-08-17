@@ -16,13 +16,15 @@
   published   {regular, backfill} — stage=PUBLISHED 행을 회차로 가른 수
   categories  카테고리별
     attempts  그 카테고리의 모든 시도 행 합 (PUBLISHED 포함)
+    articles  서로 다른 기사 수 (URL 기준). 시도 ÷ 이 값이 재시도 배수다
     losses    발행에 이르지 못한 시도 (= attempts - published)
     reasons   서버 reason 코드별 수 (PUBLISHED 행은 reason 이 null 이라 제외)
     stages    탈락 단계별 수 (PUBLISHED 포함)
     runs      {regular, backfill}
 
-`scrape-stats.py` 의 `articles`(중복 제거한 기사 수)에 대응하는 값은 없다. 롤업은 집계라
-distinct 기사 수를 복원할 수 없다 — 없는 값을 attempts 로 대신 채우지 않는다.
+⚠️ `articles` 는 옛 파일의 같은 이름 필드와 **세는 법이 다르다**. 옛 파서는 로그의 제목 문자열을
+키로 썼는데 그 뒤에 `stage=`·`reason=` 이 붙어 같은 기사가 단계마다 다른 기사로 세어졌다(그래서
+배수가 낮게 나왔다). 여기 값은 서버가 URL 로 센 것이다. 두 구간의 배수를 직접 비교하지 말 것.
 """
 
 import json
@@ -39,6 +41,7 @@ def build_rows(rollup):
         "published": defaultdict(int),
         "categories": defaultdict(lambda: {
             "attempts": 0,
+            "articles": 0,
             "losses": 0,
             "reasons": defaultdict(int),
             "stages": defaultdict(int),
@@ -53,6 +56,8 @@ def build_rows(rollup):
         run = _run_key(r.get("runWindow"))
 
         cat["attempts"] += n
+        # 같은 날·같은 카테고리의 모든 행에 같은 값이 실린다 — 더하지 말고 덮는다.
+        cat["articles"] = r.get("distinctArticles", 0)
         cat["stages"][r["stage"]] += n
         cat["runs"][run] += n
 
@@ -73,6 +78,7 @@ def build_rows(rollup):
             "categories": {
                 name: {
                     "attempts": c["attempts"],
+                    "articles": c["articles"],
                     "losses": c["losses"],
                     "reasons": dict(c["reasons"]),
                     "stages": dict(c["stages"]),

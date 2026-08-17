@@ -32,7 +32,10 @@ public interface QuizGenerationAttemptRepository
     @Query("""
             select a.occurredOn as day, a.category as category,
                    a.runWindow as runWindow,
-                   a.stage as stage, a.reason as reason, count(a) as attempts
+                   a.stage as stage, a.reason as reason, count(a) as attempts,
+                   (select count(distinct a2.articleUrl) from QuizGenerationAttempt a2
+                     where a2.occurredOn = a.occurredOn
+                       and a2.category = a.category) as distinctArticles
             from QuizGenerationAttempt a
             where a.occurredOn >= :from
               and (a.quizId is null
@@ -53,5 +56,23 @@ public interface QuizGenerationAttemptRepository
         String getStage();
         String getReason();
         long getAttempts();
+
+        /**
+         * 그날 그 카테고리가 건드린 <b>서로 다른 기사 수</b>. 시도 ÷ 이 값이 재시도 배수다.
+         *
+         * <p>같은 날·같은 카테고리의 모든 행에 같은 값이 반복해서 실린다. 소비자가 롤업
+         * 한 번만 읽고 배수를 계산할 수 있게 하려는 의도적 중복이다 — 별도 조회로 빼면
+         * 검수 절차가 두 번 호출·두 번 파싱이 되고, 그 둘이 어긋나는 사고 경로가 생긴다.
+         *
+         * <p><b>제목이 아니라 URL 로 센다.</b> 종전 링버퍼 스크립트는 로그 줄의
+         * {@code title=} 뒤 문자열을 키로 썼는데 그 뒤에 {@code stage=}·{@code reason=} 이
+         * 붙어 있어, <b>같은 기사가 다른 단계로 떨어지면 다른 기사로 세어졌다</b>.
+         * 그래서 기사 수는 부풀고 배수는 낮게 나왔다(8/17 EXCHANGE_RATE 고유 29건이 40 으로
+         * 잡혀 2.10× 대신 1.53×). URL 은 그런 오염이 없다.
+         *
+         * <p>{@code articleUrl} 이 null 인 행(기사 없이 실패한 시도)은 세지 않는다 —
+         * {@code count(distinct)} 가 null 을 빼므로 별도 조건이 필요 없다.
+         */
+        long getDistinctArticles();
     }
 }

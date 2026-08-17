@@ -167,6 +167,62 @@ class QuizGenerationAttemptRepositoryTest {
                 .containsExactly("VERIFY");
     }
 
+    /**
+     * 재시도 배수(시도 ÷ 서로 다른 기사)의 분모를 고정한다.
+     *
+     * 종전 링버퍼 스크립트는 로그 줄의 {@code title=} 뒤 문자열을 키로 썼는데 그 뒤에
+     * {@code stage=}·{@code reason=} 이 붙어 있어 <b>같은 기사가 다른 단계로 떨어지면
+     * 다른 기사로 세어졌다</b>. 기사 수가 부풀면 배수는 낮게 나오고, "같은 풀을 다시
+     * 훑는다"는 낭비가 실제보다 작아 보인다(8/17 고유 29건이 40 으로 잡혀 2.10× → 1.53×).
+     * 그래서 제목이 아니라 URL 로 세고, 단계가 갈려도 한 건으로 묶여야 한다.
+     */
+    @Test
+    void 같은_기사가_여러_단계로_떨어져도_기사_수는_하나다() {
+        repository.deleteAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        // 같은 URL 이 서로 다른 단계·사유로 두 번 — 옛 파서가 2건으로 세던 경우다.
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "REGULAR",
+                "환율", "환율 기사 (1차)", "https://example.com/same",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "BACKFILL",
+                "환율", "환율 기사 (재시도)", "https://example.com/same",
+                AttemptStage.VERIFY, AttemptReason.VERIFY_FAILED, null, null));
+        repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "REGULAR",
+                "환율", "다른 기사", "https://example.com/other",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+
+        List<QuizGenerationAttemptRepository.DailyRow> rows =
+                repository.rollupSince(LocalDate.now(clock).minusDays(1));
+
+        // 시도는 3(같은 축끼리 묶여 2행), 서로 다른 기사는 2 → 배수 1.5×.
+        assertThat(rows.stream().mapToLong(QuizGenerationAttemptRepository.DailyRow::getAttempts).sum())
+                .isEqualTo(3);
+        assertThat(rows).extracting(QuizGenerationAttemptRepository.DailyRow::getDistinctArticles)
+                .containsOnly(2L);
+    }
+
+    /** 기사 없이 실패한 시도(URL null)는 분모에 끼지 않는다 — 배수가 실제보다 커진다. */
+    @Test
+    void 기사_URL_이_없는_행은_기사_수에_안_들어간다() {
+        repository.deleteAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "기사", "https://example.com/one",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", null, null,
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null));
+
+        List<QuizGenerationAttemptRepository.DailyRow> rows =
+                repository.rollupSince(LocalDate.now(clock).minusDays(1));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).getAttempts()).isEqualTo(2);
+        assertThat(rows.get(0).getDistinctArticles()).isEqualTo(1);
+    }
+
     @Test
     void 하루치_원시_행을_시각순으로_돌려준다() {
         repository.deleteAll();

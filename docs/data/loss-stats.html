@@ -84,16 +84,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .trend .of { color: var(--ink-soft); font-size: 12px; }
 .trend b.short { color: var(--short); }
 .trend .bar { min-width: 3px; }
+.bar.waste { background: var(--grid); }
+.bar.waste span { background: var(--regular); }
+td.num.over { color: var(--short); font-weight: 600; }
 .trend td:last-child { width: 38%; padding-right: 0; }
 tr.bound td, tr.gap td { font-size: 12px; color: var(--ink-soft); padding: 8px 0; }
 tr.bound td { border-bottom: 1px solid var(--hair); }
 tr.gap td { border-bottom: 1px dashed var(--hair); }
 .rlegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 18px; font-size: 12.5px; }
-.rlegend div { display: grid; grid-template-columns: 11px auto 1fr; gap: 8px; align-items: baseline; }
+.rlegend div { display: grid; grid-template-columns: 11px auto 1fr auto; gap: 8px; align-items: baseline; }
 .rlegend .sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
 .rlegend b { font-weight: 600; white-space: nowrap; }
 .rlegend span:not(.sw) { color: var(--ink-soft); }
-.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); }
+.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); white-space: nowrap; }
 </style>
 <div class="wrap">
   <header>
@@ -112,6 +115,12 @@ tr.gap td { border-bottom: 1px dashed var(--hair); }
     <h2>2026-08-17 — 카테고리별</h2>
     <div class="tablewrap"><table><tr><th>카테고리</th><th class="num">시도</th><th class="num">정기</th><th class="num">백필</th><th>어디까지 갔나</th></tr><tr><td>환율</td><td class="num">61</td><td class="num">23</td><td class="num">38</td><td>기사 거르기 2 · 문제 만들기 37 · 규칙 검사 15 · 다른 모델이 풀어보기 6 · 발행 1</td></tr><tr><td>물가</td><td class="num">28</td><td class="num">28</td><td class="num">·</td><td>문제 만들기 16 · 규칙 검사 7 · 다른 모델이 풀어보기 4 · 발행 1</td></tr><tr><td>금리</td><td class="num">14</td><td class="num">14</td><td class="num">·</td><td>기사 거르기 2 · 문제 만들기 6 · 규칙 검사 5 · 발행 1</td></tr><tr><td>부동산</td><td class="num">3</td><td class="num">3</td><td class="num">·</td><td>규칙 검사 2 · 발행 1</td></tr><tr><td>주식</td><td class="num">1</td><td class="num">1</td><td class="num">·</td><td>발행 1</td></tr></table></div>
 <p class="note" style="margin:20px 0 14px">기사 한 건은 아래 관문을 순서대로 지난다. 표의 “어디까지 갔나”는 <b>그 관문에서 몇 건이 떨어졌는지</b>다.</p><ol class="stages"><li><b>기사 거르기</b><span>문제를 만들어보기도 전에 기사 단계에서 뺀 것. 사설이거나, 다른 카테고리가 이미 쓴 기사.</span></li><li><b>문제 만들기</b><span>만들어보라고 시켰는데 모델이 “이 기사로는 못 만들겠다”고 한 것. 응답이 깨졌거나 API 가 실패한 경우도 포함.</span></li><li><b>규칙 검사</b><span>만들어진 문제를 저장 전에 정해둔 규칙으로 검사해 반려한 것. 최근에 쓴 용어를 또 썼거나, 형식이 어긋난 경우.</span></li><li><b>다른 모델이 풀어보기</b><span>완성된 문제를 다른 회사 모델에게 풀려본 것. 답이 안 맞거나 정답이 둘 이상이면 반려.</span></li><li><b>발행</b><span>다 통과해서 실제로 나간 문제. 탈락이 아니다.</span></li></ol>
+  </section>
+  <section class="panel">
+    <h2>2026-08-17 — 재시도 낭비</h2>
+    <p class="note" style="margin:0 0 16px">같은 기사가 검색어 여러 개에 걸쳐 들어오거나,
+      회차가 바뀌어도 같은 기사 풀을 다시 훑어 반복 시도된다. 배수가 1.0 이면 낭비가 없다.</p>
+<p class="note">이 날짜에는 기사 수 기록이 없어 배수를 낼 수 없다 (옛 구간). 없는 값을 시도 수로 대신 채우지 않는다.</p>
   </section>
   <section class="panel">
     <h2>거른 사유</h2>

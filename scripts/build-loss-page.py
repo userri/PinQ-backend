@@ -119,6 +119,7 @@ def normalize(row, source):
         cats.append({
             "name": CATEGORY_LABEL.get(name, name),
             "attempts": attempts,
+            "articles": c.get("articles", 0),
             "reasons": [
                 {"label": (TABLE_REASON if source == "table" else LEGACY_REASON).get(k, k), "n": v}
                 for k, v in sorted(c["reasons"].items(), key=lambda kv: -kv[1])
@@ -147,6 +148,7 @@ def normalize(row, source):
         "backfill": sum(c["backfill"] for c in cats),
         "published": published.get("regular", 0) + published.get("backfill", 0),
         "publishedBackfill": published.get("backfill", 0),
+        "articles": sum(c["articles"] for c in cats),
         "categories": cats,
     }
 
@@ -248,16 +250,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .trend .of { color: var(--ink-soft); font-size: 12px; }
 .trend b.short { color: var(--short); }
 .trend .bar { min-width: 3px; }
+.bar.waste { background: var(--grid); }
+.bar.waste span { background: var(--regular); }
+td.num.over { color: var(--short); font-weight: 600; }
 .trend td:last-child { width: 38%; padding-right: 0; }
 tr.bound td, tr.gap td { font-size: 12px; color: var(--ink-soft); padding: 8px 0; }
 tr.bound td { border-bottom: 1px solid var(--hair); }
 tr.gap td { border-bottom: 1px dashed var(--hair); }
 .rlegend { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 18px; font-size: 12.5px; }
-.rlegend div { display: grid; grid-template-columns: 11px auto 1fr; gap: 8px; align-items: baseline; }
+.rlegend div { display: grid; grid-template-columns: 11px auto 1fr auto; gap: 8px; align-items: baseline; }
 .rlegend .sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
 .rlegend b { font-weight: 600; white-space: nowrap; }
 .rlegend span:not(.sw) { color: var(--ink-soft); }
-.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); }
+.rlegend em { font-style: normal; font-size: 11px; color: var(--legacy-ink); white-space: nowrap; }
 </style>
 <div class="wrap">
   <header>
@@ -276,6 +281,12 @@ __RLEGEND__
     <h2>__LATEST__ — 카테고리별</h2>
     <div class="tablewrap"><table>__CATS__</table></div>
 __LEGEND__
+  </section>
+  <section class="panel">
+    <h2>__LATEST__ — 재시도 낭비</h2>
+    <p class="note" style="margin:0 0 16px">같은 기사가 검색어 여러 개에 걸쳐 들어오거나,
+      회차가 바뀌어도 같은 기사 풀을 다시 훑어 반복 시도된다. 배수가 1.0 이면 낭비가 없다.</p>
+__WASTE__
   </section>
   <section class="panel">
     <h2>거른 사유</h2>
@@ -305,6 +316,11 @@ def render_tiles(latest):
         ("시도", f"{latest['attempts']}건", f"백필 {latest['backfill']}건"),
         ("발행까지 간 비율", f"{rate:.1f}%", f"나머지 {lost}건은 걸러짐"),
     ]
+    if latest["articles"]:
+        ratio = latest["attempts"] / latest["articles"]
+        tiles.append(("재시도 배수", f"{ratio:.2f}×",
+                      f"서로 다른 기사 {latest['articles']}건"
+                      if ratio > 1 else "같은 기사 반복 없음"))
     return "".join(
         f'<div class="tile"><div class="k">{esc(k)}</div><div class="v">{esc(v)}</div>'
         f'<div class="n">{esc(n)}</div></div>'
@@ -347,6 +363,37 @@ def render_days(days):
             if nxt and d["date"] < gap_date < nxt:
                 rows.append(f'<tr class="gap"><td colspan="6">{esc(gap_date)} — 관측 없음 · {esc(why)}</td></tr>')
     return "".join(rows)
+
+
+def render_waste(latest):
+    """재시도 배수 — 같은 기사를 몇 번 다시 봤나. 1.0× 면 낭비가 없다."""
+    if not latest["articles"]:
+        return ('<p class="note">이 날짜에는 기사 수 기록이 없어 배수를 낼 수 없다 '
+                '(옛 구간). 없는 값을 시도 수로 대신 채우지 않는다.</p>')
+    rows = ['<tr><th>카테고리</th><th class="num">시도</th><th class="num">서로 다른 기사</th>'
+            '<th style="width:34%">시도 대비 기사</th><th class="num">배수</th></tr>']
+    top = max(c["attempts"] for c in latest["categories"]) or 1
+    for c in latest["categories"]:
+        if not c["articles"]:
+            continue
+        ratio = c["attempts"] / c["articles"]
+        cls = " over" if ratio >= 1.2 else ""
+        rows.append(
+            f'<tr><td>{esc(c["name"])}</td><td class="num">{c["attempts"]}</td>'
+            f'<td class="num">{c["articles"]}</td>'
+            f'<td><div class="bar waste" style="width:{100 * c["attempts"] / top:.2f}%">'
+            f'<span style="width:{100 * c["articles"] / c["attempts"]:.2f}%"></span></div></td>'
+            f'<td class="num{cls}">{ratio:.2f}×</td></tr>'
+        )
+    total = latest["attempts"] / latest["articles"]
+    wasted = latest["attempts"] - latest["articles"]
+    note = (f'이날 전체 배수는 <b>{total:.2f}×</b> — 시도 {latest["attempts"]}회가 서로 다른 기사 '
+            f'{latest["articles"]}건에 쓰였고, <b>{wasted}회</b>가 같은 기사를 다시 본 것이다. '
+            '짙은 칸이 서로 다른 기사, 남는 꼬리가 재시도다.') if wasted else (
+        f'이날 배수는 <b>{total:.2f}×</b> — 같은 기사를 다시 본 일이 없다.')
+    return (f'<div class="tablewrap"><table>{"".join(rows)}</table></div>'
+            f'<p class="note" style="margin-top:18px">{note} 재시도가 곧 순수 낭비는 아니다 — '
+            '8/16·8/17 모두 재시도가 그날의 최우수 문항을 회수했다.</p>')
 
 
 def render_reason_legend(days):
@@ -434,10 +481,11 @@ def main():
             .replace("__RLEGEND__", render_reason_legend(days))
             .replace("__LATEST__", esc(latest["date"]))
             .replace("__CATS__", render_cats(latest))
+            .replace("__WASTE__", render_waste(latest))
             .replace("__LEGEND__", render_stage_legend())
             .replace("__REASONS__", render_reasons(days, latest)))
     for mark in ("__TILES__", "__DAYS__", "__RLEGEND__", "__LATEST__", "__CATS__",
-                 "__LEGEND__", "__REASONS__"):
+                 "__LEGEND__", "__WASTE__", "__REASONS__"):
         if mark in html:
             raise SystemExit(f"오류: {mark} 가 치환되지 않았다 — 빈 그래프가 나갈 뻔했다.")
     pathlib.Path(args.out).write_text(html, encoding="utf-8")
