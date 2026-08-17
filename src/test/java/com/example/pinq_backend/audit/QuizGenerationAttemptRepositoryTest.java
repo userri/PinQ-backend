@@ -2,10 +2,16 @@ package com.example.pinq_backend.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.pinq_backend.article.domain.Category;
+import com.example.pinq_backend.article.domain.NewsArticle;
+import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.audit.domain.AttemptReason;
 import com.example.pinq_backend.audit.domain.AttemptStage;
 import com.example.pinq_backend.audit.domain.QuizGenerationAttempt;
 import com.example.pinq_backend.audit.repository.QuizGenerationAttemptRepository;
+import com.example.pinq_backend.quiz.domain.Choice;
+import com.example.pinq_backend.quiz.domain.Quiz;
+import com.example.pinq_backend.quiz.repository.QuizRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -31,10 +37,43 @@ class QuizGenerationAttemptRepositoryTest {
     @Autowired
     private Clock clock;
 
+    @Autowired
+    private QuizRepository quizRepository;
+
+    @Autowired
+    private NewsArticleRepository newsArticleRepository;
+
+    /** quiz 는 article_id 가 NOT NULL 이라 기사를 먼저 심어야 저장된다. */
+    private Quiz publishedQuiz() {
+        NewsArticle article = newsArticleRepository.save(NewsArticle.builder()
+                .category(Category.EXCHANGE_RATE)
+                .title("환율 기사")
+                .url("https://example.com/published")
+                .source("테스트신문")
+                .publishedAt(LocalDateTime.of(2026, 8, 17, 6, 0))
+                .build());
+        return Quiz.builder()
+                .article(article)
+                .category(Category.EXCHANGE_RATE)
+                .quizDate(LocalDate.of(2026, 8, 17))
+                .question("질문")
+                .explanation("해설")
+                .keyword("환율: 두 통화의 교환 비율")
+                .choices(List.of(
+                        Choice.builder().orderNum(1).content("가").answer(true).build(),
+                        Choice.builder().orderNum(2).content("나").answer(false).build(),
+                        Choice.builder().orderNum(3).content("다").answer(false).build(),
+                        Choice.builder().orderNum(4).content("라").answer(false).build()))
+                .build();
+    }
+
     @Test
     void 날짜_카테고리_단계_사유로_롤업된다() {
         repository.deleteAll();
         LocalDateTime now = LocalDateTime.now(clock);
+        // 발행 행은 실재하는 퀴즈를 가리켜야 롤업에 남는다 — 사라진 퀴즈를 가리키는 행은
+        // 재실행 잔재로 보고 걸러낸다(아래 사라진_퀴즈 테스트).
+        Long quizId = quizRepository.save(publishedQuiz()).getId();
 
         repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "REGULAR",
                 "환율", "교보문고 베스트셀러", "https://example.com/1",
@@ -44,7 +83,7 @@ class QuizGenerationAttemptRepositoryTest {
                 AttemptStage.VERIFY, AttemptReason.VERIFY_FAILED, null, null));
         repository.save(new QuizGenerationAttempt(now, "EXCHANGE_RATE", "REGULAR",
                 "환율", "엔화 방어 국채 매각", "https://example.com/3",
-                AttemptStage.PUBLISHED, null, null, 463L));
+                AttemptStage.PUBLISHED, null, null, quizId));
 
         List<QuizGenerationAttemptRepository.DailyRow> rows =
                 repository.rollupSince(LocalDate.now(clock).minusDays(1));
@@ -96,6 +135,36 @@ class QuizGenerationAttemptRepositoryTest {
                 .containsExactlyInAnyOrder(
                         org.assertj.core.groups.Tuple.tuple("REGULAR", 1L),
                         org.assertj.core.groups.Tuple.tuple("BACKFILL", 2L));
+    }
+
+    /**
+     * 재실행한 날의 유령 분모를 막는다.
+     *
+     * {@code generateTodayQuizzes()} 는 그날 퀴즈를 지우고 다시 만드는데 계측 행은 별도
+     * 트랜잭션으로 이미 커밋돼 있고 FK 도 없다(계측이 본 데이터 삭제를 막으면 안 되므로
+     * 의도적이다). 그래서 재실행한 날은 {@code PUBLISHED} 행이 두 벌이 되고 오래된 쪽은
+     * <b>존재하지 않는 quiz_id</b> 를 가리킨다. 이걸 그대로 세면 "그날만 발행이 두 배"인
+     * 행이 나와 손실률 분모가 통째로 틀린다.
+     */
+    @Test
+    void 사라진_퀴즈를_가리키는_발행행은_롤업에서_빠진다() {
+        repository.deleteAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        // 존재하지 않는 quiz_id — 재실행으로 원본 퀴즈가 지워진 상태를 흉내낸다.
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "지워진 퀴즈의 기사", "https://example.com/gone",
+                AttemptStage.PUBLISHED, null, null, 999_999_999L));
+        // 탈락 행은 quiz_id 가 없다 — 필터에 걸려 사라지면 안 된다.
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "탈락 기사", "https://example.com/drop",
+                AttemptStage.VERIFY, AttemptReason.VERIFY_FAILED, null, null));
+
+        List<QuizGenerationAttemptRepository.DailyRow> rows =
+                repository.rollupSince(LocalDate.now(clock).minusDays(1));
+
+        assertThat(rows).extracting(QuizGenerationAttemptRepository.DailyRow::getStage)
+                .containsExactly("VERIFY");
     }
 
     @Test

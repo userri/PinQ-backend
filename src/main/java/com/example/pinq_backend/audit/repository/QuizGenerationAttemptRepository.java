@@ -21,6 +21,13 @@ public interface QuizGenerationAttemptRepository
      * 백필 39 였는데, 이 축이 없으면 그 스파이크를 기사 풀 악화로 오독한다.
      * 종전 링버퍼 집계 스크립트에는 이 구분이 있었으므로(다만 시각 문턱 추정이라
      * 정기 회차가 늦어지면 틀렸다) 빼고 갈아타면 기능 후퇴다.
+     *
+     * <p><b>사라진 퀴즈를 가리키는 발행 행은 뺀다.</b> {@code generateTodayQuizzes()} 는
+     * 그날 퀴즈를 지우고 다시 만드는데 계측 행은 별도 트랜잭션으로 이미 커밋돼 있고 FK 도
+     * 없다(계측이 본 데이터 삭제를 막으면 안 되므로 의도적이다). 그래서 재실행한 날은
+     * {@code PUBLISHED} 행이 두 벌이 되고 오래된 쪽은 존재하지 않는 {@code quiz_id} 를
+     * 가리킨다 — 그대로 세면 "그날만 발행이 두 배"인 행이 나와 손실률 분모가 틀린다.
+     * {@code quizId is null} 을 함께 허용해야 탈락 행이 같이 날아가지 않는다.
      */
     @Query("""
             select a.occurredOn as day, a.category as category,
@@ -28,6 +35,8 @@ public interface QuizGenerationAttemptRepository
                    a.stage as stage, a.reason as reason, count(a) as attempts
             from QuizGenerationAttempt a
             where a.occurredOn >= :from
+              and (a.quizId is null
+                   or exists (select 1 from Quiz q where q.id = a.quizId))
             group by a.occurredOn, a.category, a.runWindow, a.stage, a.reason
             order by a.occurredOn asc, a.category asc, a.runWindow asc, a.stage asc
             """)
