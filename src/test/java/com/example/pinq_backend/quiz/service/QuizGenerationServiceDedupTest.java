@@ -235,7 +235,9 @@ class QuizGenerationServiceDedupTest {
                 "가계대출 총량 규제: 금융당국이 은행별 대출 총량을 제한하는 정책");
         when(quizRepository.findAllByQuizDateGreaterThanEqual(any())).thenReturn(List.of(past));
 
-        when(naverNewsClient.search(eq("부동산"), anyInt())).thenReturn(List.of(
+        // REAL_ESTATE 의 첫 키워드. 키워드 목록이 바뀌어도 순서에 묶이지 않도록 선두를 스텁한다
+        // (종전엔 "부동산"을 걸어뒀는데 2026-08-18 개편에서 그 키워드가 빠지며 전량 빈 목록이 됐다).
+        when(naverNewsClient.search(eq("주택담보대출"), anyInt())).thenReturn(List.of(
                 newsItem("기사A", "https://news.example.com/a"),
                 newsItem("기사B", "https://news.example.com/b")
         ));
