@@ -26,8 +26,13 @@ import sys
 
 
 def main():
+    # stdin/stdout/stderr 을 utf-8 로 고정한다. Windows 기본(cp949)에서는 한글이 든
+    # 입력이 UnicodeDecodeError 로 죽거나 조용히 깨지고, 한글 출력은
+    # UnicodeEncodeError 로 죽는다. `scrape-stats.py` 와 같은 처리다.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     rows = []
-    for line in sys.stdin.read().splitlines():
+    for line in sys.stdin.buffer.read().decode("utf-8-sig").splitlines():
         line = line.strip()
         if line.startswith("["):
             rows += json.loads(line)

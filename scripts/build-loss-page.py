@@ -17,6 +17,7 @@
 import argparse
 import json
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LEGACY = ROOT / "docs/data/scrape-stats.jsonl"
@@ -466,6 +467,11 @@ def render_reasons(days, latest):
 
 
 def main():
+    # stdout/stderr 을 utf-8 로 고정한다. Windows 기본(cp949)에서는 한글 진행 문구가
+    # UnicodeEncodeError 로 죽는다 — 2026-08-19 회차에서 파일은 정상인데 마지막 줄에서
+    # 죽어 실패로 보였다. `scrape-stats.py` 와 같은 처리다.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("-o", "--out", default=str(ROOT / "docs/data/loss-stats.html"),
                     help="기본값: docs/data/loss-stats.html (레포에 커밋되는 자리 — 열면 바로 보인다)")

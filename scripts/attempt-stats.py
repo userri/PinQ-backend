@@ -91,9 +91,14 @@ def build_rows(rollup):
 
 
 def main():
+    # stdin/stdout/stderr 을 utf-8 로 고정한다. Windows 기본(cp949)에서는 한글이 든
+    # 입력이 UnicodeDecodeError 로 죽거나 조용히 깨지고, 한글 출력은
+    # UnicodeEncodeError 로 죽는다. `scrape-stats.py` 와 같은 처리다.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     want_date = sys.argv[1] if len(sys.argv) > 1 else None
 
-    rollup = json.load(sys.stdin)
+    rollup = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     if not isinstance(rollup, list):
         sys.exit("오류: 롤업 배열이 아니다. `attempts raw` 가 아니라 `attempts <일수|날짜>` 를 넘길 것.")
     if rollup and "day" not in rollup[0]:
