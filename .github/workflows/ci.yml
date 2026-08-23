@@ -58,7 +58,7 @@ jobs:
       - name: Build bootJar
         run: chmod +x gradlew && ./gradlew bootJar -x test
 
-      # arm64 이미지 레이어 조립용 에뮬레이션 (Oracle Cloud Ampere A1 서버 대상)
+      # arm64 이미지 레이어 조립용 에뮬레이션 (arm 서버로 이전할 여지를 남겨둔다)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -72,8 +72,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # 태그 전략: latest + 커밋 SHA 7자리 (롤백 가능)
-      # 멀티아치: amd64(기존 EC2) + arm64(Oracle Ampere A1) — 서버가 자기 아치에 맞는
-      # 이미지를 자동으로 pull 하므로 이전 중에도 양쪽 모두 배포 가능하다.
+      # 멀티아치: amd64(현 Azure VM) + arm64 — 서버가 자기 아치에 맞는 이미지를
+      # 자동으로 pull 하므로 이전 중에도 양쪽 모두 배포 가능하다.
       - name: Build & push image
         uses: docker/build-push-action@v5
         with:

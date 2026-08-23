@@ -15,7 +15,7 @@
 | 🟢 **살아있는 상태** | 계속 갱신됨. 매일 읽는다 | `PENDING.md`, `quality-audit-log.md` |
 | 📏 **규칙 (SSOT)** | 지금 참인 것. 코드와 어긋나면 **코드를 고친다** | `rules/` |
 | 🧭 **결정 기록** | 왜 이렇게 됐나 / 뭘 기각했나. 코드에 안 남는 정보 | `decisions/` |
-| 🔧 **운영 절차** | 어떻게 하나 | `db-access-and-migration.md`, `oracle-migration.md` |
+| 🔧 **운영 절차** | 어떻게 하나 | `db-access-and-migration.md`, `backup.md` |
 | 📦 **작업 산출물** | 일회성. 완료되면 참고용 | `superpowers/` |
 
 ---
@@ -54,7 +54,7 @@
 | 문서 | 무엇 | 주의 |
 |---|---|---|
 | [db-access-and-migration.md](db-access-and-migration.md) | 운영 MySQL 접속 · 스키마 마이그레이션 표준 절차 | **비밀번호를 명령줄에 직접 쓰지 않는다** — `.env` 를 셸에 로드해 변수로만 참조 |
-| [oracle-migration.md](oracle-migration.md) | AWS EC2 → Oracle Cloud Always Free 이전 가이드 | 앱 코드 변경 없음. 가입 차단 상태로 **보류 중** |
+| [backup.md](backup.md) | 서버 백업 회수 절차 (DB·시크릿·인증서) | 산출물은 **레포 밖** `~/backups/pinq/` 에만 둔다 |
 
 ## 📦 작업 산출물 — 완료, 참고용
 
