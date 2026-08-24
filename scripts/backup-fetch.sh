@@ -14,14 +14,43 @@ mkdir -p "$DEST"; chmod 700 "$HOME/backups/pinq" "$DEST"
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 
+# 노트북에서 도는 작업이라 회선이 흔들리거나 맥이 조는 일이 실제로 있다
+# (2026-08-24 13:00 자동 실행이 회수 도중 Operation timed out 으로 끊겼다).
+# ServerAlive* 로 죽은 연결을 빨리 포기하게 하고, 아래 retry 로 다시 시도한다.
+SSH_OPTS=(-i "$PINQ_SSH_KEY" -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
+
+# 실패를 조용히 넘기지 않는다 — 알림이 없으면 몇 주 뒤에나 알게 된다.
+notify() {
+  /usr/bin/osascript -e "display notification \"$1\" with title \"PinQ 백업 실패\"" 2>/dev/null || true
+}
+fail() { echo "FAIL: $1"; notify "$1"; exit 1; }
+
+# 3회까지 재시도. 간격을 벌리는 건 회선이 잠깐 끊긴 경우를 노린 것이다.
+retry() {
+  local what=$1; shift
+  local n
+  for n in 1 2 3; do
+    if "$@"; then return 0; fi
+    echo "  ${what} 실패 (${n}/3)"
+    [ "$n" -lt 3 ] && sleep $((n * 20))
+  done
+  fail "${what} 3회 실패"
+}
+
+# 검증 단계 등 retry 밖에서 죽는 경우도 알림이 뜨게 한다.
+trap 'fail "예기치 못한 오류 (line $LINENO)"' ERR
+
 echo "== 서버에서 백업 생성 =="
 # stdin 으로 넘기지 않는다: 스크립트 안의 docker exec 가 stdin 을 먹어 본문이 잘린다.
-scp -i "$PINQ_SSH_KEY" "$HERE/backup-all.sh" "$PINQ_SSH_HOST:/tmp/pinq-backup-all.sh"
-ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" "bash /tmp/pinq-backup-all.sh ${STAMP} && rm -f /tmp/pinq-backup-all.sh"
+retry "스크립트 전송" scp "${SSH_OPTS[@]}" "$HERE/backup-all.sh" "$PINQ_SSH_HOST:/tmp/pinq-backup-all.sh"
+retry "백업 생성" ssh "${SSH_OPTS[@]}" "$PINQ_SSH_HOST" \
+  "bash /tmp/pinq-backup-all.sh ${STAMP} && rm -f /tmp/pinq-backup-all.sh"
 
 echo "== 회수 =="
-scp -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST:/home/ubuntu/pinq-backup-${STAMP}.tar.gz" "$DEST/"
-ssh -i "$PINQ_SSH_KEY" "$PINQ_SSH_HOST" "rm -f /home/ubuntu/pinq-backup-${STAMP}.tar.gz"
+retry "회수" scp "${SSH_OPTS[@]}" "$PINQ_SSH_HOST:/home/ubuntu/pinq-backup-${STAMP}.tar.gz" "$DEST/"
+# 회수에 성공한 뒤에만 서버 사본을 지운다. 순서를 바꾸면 실패한 날 원본까지 잃는다.
+# 옛 실패로 남은 사본도 같이 치운다(디스크 843MB VM).
+ssh "${SSH_OPTS[@]}" "$PINQ_SSH_HOST" "rm -f /home/ubuntu/pinq-backup-*.tar.gz" || true
 
 echo "== 검증 (복원 가능한지 실제로 열어본다) =="
 tar tzf "$DEST/pinq-backup-${STAMP}.tar.gz"

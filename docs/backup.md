@@ -46,7 +46,18 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pinq.backup.plist
 | 중지 | `launchctl bootout gui/$(id -u)/com.pinq.backup` |
 | 로그 | `~/backups/pinq/backup.log` (매 실행 덮어씀) |
 
-보관은 최근 30일 전부 + 그 이전은 매월 1일자만. 하루 약 310KB.
+보관은 최근 30일 전부 + 그 이전은 매월 1일자만. 하루 약 320KB.
+
+### 실패는 재시도하고, 그래도 안 되면 알린다
+
+노트북에서 도는 작업이라 회선이 흔들리거나 맥이 조는 일이 실제로 있다 —
+2026-08-24 첫 자동 실행이 회수 도중 `Operation timed out` 으로 끊겼다. 서버 tar 는
+만들어졌는데 로컬에 안 왔고, **아무도 그걸 몰랐다.**
+
+그래서 각 원격 단계는 3회 재시도(20s·40s 간격)하고, 최종 실패 시 macOS 알림을
+띄운다. `ServerAliveInterval` 로 죽은 연결을 빨리 포기하게 해 재시도가 의미를 갖게 했다.
+
+**서버 사본은 회수에 성공한 뒤에만 지운다.** 순서를 바꾸면 실패한 날 원본까지 잃는다.
 
 ### SSH 키를 `~/Downloads` 에 두면 안 된다
 
