@@ -9,8 +9,24 @@ set -a; . "$HOME/.pinq-ops.env"; set +a
 : "${PINQ_SSH_HOST:?~/.pinq-ops.env 에 PINQ_SSH_HOST 가 없다}"
 
 STAMP=$(date +%Y%m%d)
-DEST="$HOME/backups/pinq/$STAMP"          # 레포 밖. 시크릿이 들어 있다.
-mkdir -p "$DEST"; chmod 700 "$HOME/backups/pinq" "$DEST"
+ROOT="$HOME/backups/pinq"                 # 레포 밖. 시크릿이 들어 있다.
+DEST="$ROOT/$STAMP"
+TARBALL="pinq-backup-${STAMP}.tar.gz"
+mkdir -p "$ROOT"; chmod 700 "$ROOT"
+
+# 매 실행을 시각과 함께 로그 끝에 이어 붙인다. 덮어쓰면 실패 원인이 사라진다 —
+# 2026-08-25~09-11 사이 13일이 실패했는데 마지막 성공 로그만 남아 원인을 못 봤다.
+echo; echo "### $(date '+%F %T') 시작"
+
+# 하루에 여러 번 예약돼 있다(13·18·22시). 이미 성공한 날은 다시 하지 않는다.
+if [ -s "$DEST/$TARBALL" ]; then
+  echo "이미 있음: $DEST/$TARBALL — 건너뜀"
+  exit 0
+fi
+
+# 성공 전에는 폴더를 만들지 않는다. 빈 폴더가 "백업된 날"로 세어졌다.
+WORK=$(mktemp -d "$ROOT/.tmp-${STAMP}.XXXX")
+trap '/bin/rm -rf "$WORK"' EXIT
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 
@@ -23,7 +39,13 @@ SSH_OPTS=(-i "$PINQ_SSH_KEY" -o ConnectTimeout=15 -o ServerAliveInterval=10 -o S
 notify() {
   /usr/bin/osascript -e "display notification \"$1\" with title \"PinQ 백업 실패\"" 2>/dev/null || true
 }
-fail() { echo "FAIL: $1"; notify "$1"; exit 1; }
+# 하루 세 번(13·18·22시) 시도하므로, 알림은 마지막 슬롯이 실패했을 때만 띄운다.
+# 사내망에서는 13시·18시 실패가 정상이라 매번 알리면 알림을 무시하게 된다.
+fail() {
+  echo "FAIL: $1"
+  [ "$(date +%H)" -ge 21 ] && notify "오늘 3회 모두 실패: $1"
+  exit 1
+}
 
 # 3회까지 재시도. 간격을 벌리는 건 회선이 잠깐 끊긴 경우를 노린 것이다.
 retry() {
@@ -40,6 +62,24 @@ retry() {
 # 검증 단계 등 retry 밖에서 죽는 경우도 알림이 뜨게 한다.
 trap 'fail "예기치 못한 오류 (line $LINENO)"' ERR
 
+# ── 네트워크 대기 ──────────────────────────────────────────────────
+# launchd 는 잠든 사이 놓친 실행을 깨어나자마자 돌리는데, 그때는 Wi-Fi 가 아직
+# 안 붙어 있다(로그: "Network is unreachable"). 2026-08-25~09-11 실패 13일의 주원인.
+# 최대 3분, 15초마다 서버 22번 포트가 열리는지 본다.
+echo "== 네트워크 대기 =="
+HOST_ONLY=${PINQ_SSH_HOST#*@}
+for i in $(seq 1 12); do
+  if nc -z -G 5 "$HOST_ONLY" 22 2>/dev/null; then
+    echo "  연결 가능 (${i}회째)"; break
+  fi
+  if [ "$i" -eq 12 ]; then
+    # 사내망은 아웃바운드 22 를 막는다(2026-08-11 실측). 그 경우 재시도해도 소용없다 —
+    # 다음 예약 시각(18시·22시)에 다른 회선에서 다시 시도된다.
+    fail "3분간 22번 포트 연결 불가 — 다음 예약 시각에 재시도"
+  fi
+  sleep 15
+done
+
 echo "== 서버에서 백업 생성 =="
 # stdin 으로 넘기지 않는다: 스크립트 안의 docker exec 가 stdin 을 먹어 본문이 잘린다.
 retry "스크립트 전송" scp "${SSH_OPTS[@]}" "$HERE/backup-all.sh" "$PINQ_SSH_HOST:/tmp/pinq-backup-all.sh"
@@ -47,17 +87,20 @@ retry "백업 생성" ssh "${SSH_OPTS[@]}" "$PINQ_SSH_HOST" \
   "bash /tmp/pinq-backup-all.sh ${STAMP} && rm -f /tmp/pinq-backup-all.sh"
 
 echo "== 회수 =="
-retry "회수" scp "${SSH_OPTS[@]}" "$PINQ_SSH_HOST:/home/ubuntu/pinq-backup-${STAMP}.tar.gz" "$DEST/"
+retry "회수" scp "${SSH_OPTS[@]}" "$PINQ_SSH_HOST:/home/ubuntu/$TARBALL" "$WORK/"
 # 회수에 성공한 뒤에만 서버 사본을 지운다. 순서를 바꾸면 실패한 날 원본까지 잃는다.
 # 옛 실패로 남은 사본도 같이 치운다(디스크 843MB VM).
 ssh "${SSH_OPTS[@]}" "$PINQ_SSH_HOST" "rm -f /home/ubuntu/pinq-backup-*.tar.gz" || true
 
 echo "== 검증 (복원 가능한지 실제로 열어본다) =="
-tar tzf "$DEST/pinq-backup-${STAMP}.tar.gz"
-tar xzOf "$DEST/pinq-backup-${STAMP}.tar.gz" "./db-${STAMP}.sql" \
+tar tzf "$WORK/$TARBALL"
+tar xzOf "$WORK/$TARBALL" "./db-${STAMP}.sql" \
   | grep -c "INSERT INTO" | xargs echo "INSERT 문 수:"
 
-chmod 600 "$DEST"/*
+# 검증까지 통과한 뒤에야 날짜 폴더가 생긴다.
+chmod 600 "$WORK/$TARBALL"
+mkdir -p "$DEST"; chmod 700 "$DEST"
+mv "$WORK/$TARBALL" "$DEST/"
 
 # ── 보관 정책 ──────────────────────────────────────────────────────
 # 최근 30일은 전부, 그 이전은 매월 1일자만 남긴다.

@@ -26,11 +26,15 @@
     <string>__REPO__/scripts/backup-fetch.sh</string>
   </array>
 
+  <!-- 하루 세 번. 13시 한 번으로는 20일 중 7일만 성공했다(2026-08-24~09-12):
+       잠든 사이 놓친 실행이 Wi-Fi 붙기 전에 돌거나, 사내망이 22번을 막는다.
+       스크립트가 이미 성공한 날은 건너뛰므로 세 번 다 돌지 않는다. -->
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>13</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
+  <array>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
 
   <key>StandardOutPath</key>
   <string>__HOME__/backups/pinq/backup.log</string>
