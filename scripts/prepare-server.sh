@@ -160,4 +160,13 @@ else
   echo "SKIP: quiz_generation_attempt 이미 존재"
 fi
 
+# 시도 행의 기사 본문 출처(스크래핑/스니펫 폴백) — ADD COLUMN 이라 존재 가드 필요.
+# 위 CREATE TABLE 직후에도 돌아야 하므로 테이블 가드 바깥에 둔다.
+if [ "$(col_exists quiz_generation_attempt content_source)" = "0" ]; then
+  run_sql scripts/migration/2026-09-17-attempt-content-source.sql
+  echo "OK: quiz_generation_attempt.content_source 마이그레이션 적용"
+else
+  echo "SKIP: quiz_generation_attempt.content_source 이미 존재"
+fi
+
 echo "✅ 서버 준비 완료"

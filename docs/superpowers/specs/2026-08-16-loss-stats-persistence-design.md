@@ -58,6 +58,7 @@
 | `reason` | VARCHAR(32) NULL | `stage=PUBLISHED` 면 NULL |
 | `detail` | VARCHAR(255) NULL | 룰베이스 사유 원문, LLM skipReason 등. 255자 초과 시 자른다 |
 | `quiz_id` | BIGINT NULL | 발행된 경우만. **판정 등급 소급 결합의 열쇠** |
+| `content_source` | VARCHAR(16) NULL | **2026-09-17 추가.** `SCRAPED`(news.naver.com 본문 스크래핑 성공) / `DESCRIPTION`(검색 API 스니펫 150자 폴백). 본문 확보 전 단계(PREFILTER) 행과 추가 이전 행은 NULL — 백필하지 않는다. 롤업 축에도 들어간다. 추가한 이유: 스크래퍼 로그 줄이 링버퍼 키워드 패턴에 안 걸려 이 비율을 볼 데가 없었다 |
 
 인덱스: `KEY idx_attempt_day_category (occurred_on, category)` 하나. 유일한 읽기 패턴이
 "최근 N일을 날짜×슬롯으로 묶기"다. FK 는 걸지 않는다 — 계측 테이블이 본 데이터의

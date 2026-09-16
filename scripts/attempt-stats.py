@@ -21,6 +21,11 @@
     reasons   서버 reason 코드별 수 (PUBLISHED 행은 reason 이 null 이라 제외)
     stages    탈락 단계별 수 (PUBLISHED 포함)
     runs      {regular, backfill}
+    sources   기사 본문 출처별 수 {SCRAPED, DESCRIPTION, UNKNOWN} — 2026-09-17 `content_source`
+              컬럼 추가분부터. SCRAPED = news.naver.com 본문 스크래핑 성공, DESCRIPTION = 검색 API
+              스니펫(150자) 폴백. UNKNOWN 은 본문을 확보하기 전 단계(PREFILTER) 행과 컬럼 이전 행 —
+              비율(SCRAPED ÷ (SCRAPED+DESCRIPTION))의 분모에서 뺀다. 컬럼 이전 날짜는 전부 UNKNOWN
+              이므로 그 날짜의 비율은 "없음"이지 0 이 아니다.
 
 ⚠️ `articles` 는 옛 파일의 같은 이름 필드와 **세는 법이 다르다**. 옛 파서는 로그의 제목 문자열을
 키로 썼는데 그 뒤에 `stage=`·`reason=` 이 붙어 같은 기사가 단계마다 다른 기사로 세어졌다(그래서
@@ -46,6 +51,7 @@ def build_rows(rollup):
             "reasons": defaultdict(int),
             "stages": defaultdict(int),
             "runs": defaultdict(int),
+            "sources": defaultdict(int),
         }),
     })
 
@@ -60,6 +66,8 @@ def build_rows(rollup):
         cat["articles"] = r.get("distinctArticles", 0)
         cat["stages"][r["stage"]] += n
         cat["runs"][run] += n
+        # 컬럼 추가(2026-09-17) 이전 응답에는 키 자체가 없고, 이후에도 PREFILTER 행은 null 이다.
+        cat["sources"][r.get("contentSource") or "UNKNOWN"] += n
 
         if r["stage"] == "PUBLISHED":
             day["published"][run] += n
@@ -83,6 +91,7 @@ def build_rows(rollup):
                     "reasons": dict(c["reasons"]),
                     "stages": dict(c["stages"]),
                     "runs": dict(c["runs"]),
+                    "sources": dict(c["sources"]),
                 }
                 for name, c in sorted(day["categories"].items())
             },

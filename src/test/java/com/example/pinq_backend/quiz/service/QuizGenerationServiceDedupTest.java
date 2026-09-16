@@ -18,6 +18,7 @@ import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
 import com.example.pinq_backend.audit.domain.AttemptReason;
 import com.example.pinq_backend.audit.domain.AttemptStage;
+import com.example.pinq_backend.audit.domain.ContentSource;
 import com.example.pinq_backend.news.client.GenerationOutcome;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
@@ -414,7 +415,27 @@ class QuizGenerationServiceDedupTest {
         verify(attemptRecorder).record(
                 eq(Category.INTEREST_RATE.name()), anyString(), eq("기준금리"), eq("기사A"),
                 eq("https://news.example.com/a"),
-                eq(AttemptStage.PUBLISHED), isNull(), isNull(), eq(42L));
+                eq(AttemptStage.PUBLISHED), isNull(), isNull(), eq(42L),
+                eq(ContentSource.SCRAPED));
+    }
+
+    @Test
+    @DisplayName("본문 스크래핑에 실패해 description 으로 폴백한 시도는 출처가 DESCRIPTION 으로 기록된다")
+    void scrapeFallback_isRecordedAsDescriptionSource() throws Exception {
+        when(naverNewsClient.search(eq("기준금리"), anyInt()))
+                .thenReturn(List.of(newsItem("기사A", "https://news.example.com/a")));
+        // setUp 의 기본 스텁(본문 성공)을 덮는다 — 스크래핑 실패 경로
+        when(naverArticleScraper.scrape(anyString())).thenReturn(Optional.empty());
+        when(openAIQuizClient.generateQuiz(eq("기사A"), anyString(), eq(Category.INTEREST_RATE), anyList()))
+                .thenReturn(GenerationOutcome.failure(AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null));
+
+        service.generateTodayQuizzes();
+
+        verify(attemptRecorder).record(
+                eq(Category.INTEREST_RATE.name()), anyString(), eq("기준금리"), eq("기사A"),
+                eq("https://news.example.com/a"),
+                eq(AttemptStage.GENERATE), eq(AttemptReason.LLM_SKIP), isNull(), isNull(),
+                eq(ContentSource.DESCRIPTION));
     }
 
     @Test
@@ -431,7 +452,8 @@ class QuizGenerationServiceDedupTest {
         verify(attemptRecorder).record(
                 eq(Category.INTEREST_RATE.name()), anyString(), eq("기준금리"), eq("기사A"),
                 eq("https://news.example.com/a"),
-                eq(AttemptStage.GENERATE), eq(AttemptReason.LLM_SKIP), eq("skip-detail"), isNull());
+                eq(AttemptStage.GENERATE), eq(AttemptReason.LLM_SKIP), eq("skip-detail"), isNull(),
+                eq(ContentSource.SCRAPED));
     }
 
     @Test

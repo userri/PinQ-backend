@@ -28,11 +28,16 @@ public interface QuizGenerationAttemptRepository
      * {@code PUBLISHED} 행이 두 벌이 되고 오래된 쪽은 존재하지 않는 {@code quiz_id} 를
      * 가리킨다 — 그대로 세면 "그날만 발행이 두 배"인 행이 나와 손실률 분모가 틀린다.
      * {@code quizId is null} 을 함께 허용해야 탈락 행이 같이 날아가지 않는다.
+     *
+     * <p>{@code contentSource} 도 축이다 — 스크래핑 성공 : description 폴백 비율은 이 롤업의
+     * {@code attempts} 를 출처별로 더하면 나온다. 축을 하나 더 넣어 행 수가 늘지만, 소비자
+     * ({@code scripts/attempt-stats.py})는 행을 더하는 구조라 기존 집계값은 변하지 않는다.
      */
     @Query("""
             select a.occurredOn as day, a.category as category,
                    a.runWindow as runWindow,
-                   a.stage as stage, a.reason as reason, count(a) as attempts,
+                   a.stage as stage, a.reason as reason,
+                   a.contentSource as contentSource, count(a) as attempts,
                    (select count(distinct a2.articleUrl) from QuizGenerationAttempt a2
                      where a2.occurredOn = a.occurredOn
                        and a2.category = a.category) as distinctArticles
@@ -40,7 +45,7 @@ public interface QuizGenerationAttemptRepository
             where a.occurredOn >= :from
               and (a.quizId is null
                    or exists (select 1 from Quiz q where q.id = a.quizId))
-            group by a.occurredOn, a.category, a.runWindow, a.stage, a.reason
+            group by a.occurredOn, a.category, a.runWindow, a.stage, a.reason, a.contentSource
             order by a.occurredOn asc, a.category asc, a.runWindow asc, a.stage asc
             """)
     List<DailyRow> rollupSince(@Param("from") LocalDate from);
@@ -55,6 +60,11 @@ public interface QuizGenerationAttemptRepository
         String getRunWindow();
         String getStage();
         String getReason();
+        /**
+         * SCRAPED | DESCRIPTION | null. 본문을 확보하기 전 단계(PREFILTER)의 행과
+         * 2026-09-17 컬럼 추가 이전 행은 null — {@code ContentSource} 참조.
+         */
+        String getContentSource();
         long getAttempts();
 
         /**

@@ -94,10 +94,27 @@ public class QuizGenerationAttempt {
     @Column(name = "quiz_id")
     private Long quizId;
 
+    /**
+     * 본문 출처 — 스크래핑 성공 / description 폴백. 본문을 확보하기 전 단계(PREFILTER)의
+     * 행과 2026-09-17 컬럼 추가 이전 행은 null. 의미는 {@link ContentSource} 참조.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "content_source", length = 16)
+    private ContentSource contentSource;
+
+    /** 본문을 확보하기 전 단계(PREFILTER)용 — 출처 없음 */
     public QuizGenerationAttempt(LocalDateTime occurredAt, String category, String runWindow,
                                  String searchKeyword, String articleTitle, String articleUrl,
                                  AttemptStage stage, AttemptReason reason, String detail,
                                  Long quizId) {
+        this(occurredAt, category, runWindow, searchKeyword, articleTitle, articleUrl,
+                stage, reason, detail, quizId, null);
+    }
+
+    public QuizGenerationAttempt(LocalDateTime occurredAt, String category, String runWindow,
+                                 String searchKeyword, String articleTitle, String articleUrl,
+                                 AttemptStage stage, AttemptReason reason, String detail,
+                                 Long quizId, ContentSource contentSource) {
         this.occurredAt = occurredAt;
         this.occurredOn = occurredAt.toLocalDate();
         this.category = category;
@@ -109,6 +126,7 @@ public class QuizGenerationAttempt {
         this.reason = reason;
         this.detail = truncate(detail, DETAIL_MAX);
         this.quizId = quizId;
+        this.contentSource = contentSource;
     }
 
     /**

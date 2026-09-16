@@ -7,6 +7,7 @@ import com.example.pinq_backend.article.domain.NewsArticle;
 import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.audit.domain.AttemptReason;
 import com.example.pinq_backend.audit.domain.AttemptStage;
+import com.example.pinq_backend.audit.domain.ContentSource;
 import com.example.pinq_backend.audit.domain.QuizGenerationAttempt;
 import com.example.pinq_backend.audit.repository.QuizGenerationAttemptRepository;
 import com.example.pinq_backend.quiz.domain.Choice;
@@ -135,6 +136,44 @@ class QuizGenerationAttemptRepositoryTest {
                 .containsExactlyInAnyOrder(
                         org.assertj.core.groups.Tuple.tuple("REGULAR", 1L),
                         org.assertj.core.groups.Tuple.tuple("BACKFILL", 2L));
+    }
+
+    /**
+     * 본문 출처(스크래핑 성공 / description 폴백)가 롤업의 축이 된다.
+     *
+     * 이 비율은 종전에 어디에도 남지 않았다 — 스크래퍼 로그 줄이 AuditLogBuffer 의
+     * 키워드 패턴에 걸리지 않아 링버퍼에도 없었다(2026-09-17 확인). 기사를 고르기 전
+     * 단계(PREFILTER)의 행은 출처가 없으므로 null 그대로 한 묶음이 된다.
+     */
+    @Test
+    void 본문_출처로도_갈린다() {
+        repository.deleteAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "본문 확보 1", "https://example.com/s1",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null, ContentSource.SCRAPED));
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "본문 확보 2", "https://example.com/s2",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null, ContentSource.SCRAPED));
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "스니펫 폴백", "https://example.com/d1",
+                AttemptStage.GENERATE, AttemptReason.LLM_SKIP, null, null, ContentSource.DESCRIPTION));
+        repository.save(new QuizGenerationAttempt(now, "STOCK", "REGULAR",
+                "주식", "사설", "https://example.com/e1",
+                AttemptStage.PREFILTER, AttemptReason.EDITORIAL, null, null));
+
+        List<QuizGenerationAttemptRepository.DailyRow> rows =
+                repository.rollupSince(LocalDate.now(clock).minusDays(1));
+
+        assertThat(rows).hasSize(3);
+        assertThat(rows).extracting(
+                        QuizGenerationAttemptRepository.DailyRow::getContentSource,
+                        QuizGenerationAttemptRepository.DailyRow::getAttempts)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("SCRAPED", 2L),
+                        org.assertj.core.groups.Tuple.tuple("DESCRIPTION", 1L),
+                        org.assertj.core.groups.Tuple.tuple(null, 1L));
     }
 
     /**

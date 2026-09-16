@@ -2,6 +2,7 @@ package com.example.pinq_backend.audit;
 
 import com.example.pinq_backend.audit.domain.AttemptReason;
 import com.example.pinq_backend.audit.domain.AttemptStage;
+import com.example.pinq_backend.audit.domain.ContentSource;
 import com.example.pinq_backend.audit.domain.QuizGenerationAttempt;
 import com.example.pinq_backend.audit.repository.QuizGenerationAttemptRepository;
 import java.time.Clock;
@@ -48,14 +49,24 @@ public class QuizGenerationAttemptRecorder {
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    /** 본문을 확보하기 전 단계(PREFILTER)용 — 출처 없음 */
     public void record(String category, String runWindow, String searchKeyword,
                        String articleTitle, String articleUrl,
                        AttemptStage stage, AttemptReason reason, String detail, Long quizId) {
+        record(category, runWindow, searchKeyword, articleTitle, articleUrl,
+                stage, reason, detail, quizId, null);
+    }
+
+    public void record(String category, String runWindow, String searchKeyword,
+                       String articleTitle, String articleUrl,
+                       AttemptStage stage, AttemptReason reason, String detail, Long quizId,
+                       ContentSource contentSource) {
         try {
             requiresNewTransaction.executeWithoutResult(status ->
                     repository.save(new QuizGenerationAttempt(
                             LocalDateTime.now(clock), category, runWindow,
-                            searchKeyword, articleTitle, articleUrl, stage, reason, detail, quizId)));
+                            searchKeyword, articleTitle, articleUrl, stage, reason, detail, quizId,
+                            contentSource)));
         } catch (Exception e) {
             log.warn("생성 시도 계측 저장 실패 — 계측만 유실된다. category={}, stage={}, error={}",
                     category, stage, e.getMessage());

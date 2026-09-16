@@ -6,6 +6,7 @@ import com.example.pinq_backend.article.repository.NewsArticleRepository;
 import com.example.pinq_backend.audit.QuizGenerationAttemptRecorder;
 import com.example.pinq_backend.audit.domain.AttemptReason;
 import com.example.pinq_backend.audit.domain.AttemptStage;
+import com.example.pinq_backend.audit.domain.ContentSource;
 import com.example.pinq_backend.news.client.GenerationOutcome;
 import com.example.pinq_backend.news.client.NaverArticleScraper;
 import com.example.pinq_backend.news.client.NaverNewsClient;
@@ -348,17 +349,22 @@ public class QuizGenerationService {
                     continue;
                 }
 
-                // 네이버 뉴스 본문 스크래핑 시도 → 실패 시 description(~150자 스니펫)으로 폴백
-                String content = naverArticleScraper.scrape(item.link())
-                        .filter(s -> !s.isBlank())
-                        .orElseGet(() -> {
-                            log.info("스크래핑 폴백: description 사용. title={}", title);
-                            return item.cleanDescription();
-                        });
+                // 네이버 뉴스 본문 스크래핑 시도 → 실패 시 description(~150자 스니펫)으로 폴백.
+                // 어느 쪽을 썼는지는 이 아래 모든 계측 행에 실린다 — 스크래퍼 로그는 링버퍼
+                // 패턴에 안 걸려 이 비율을 볼 데가 없었다(2026-09-17).
+                Optional<String> scraped = naverArticleScraper.scrape(item.link())
+                        .filter(s -> !s.isBlank());
+                ContentSource contentSource =
+                        scraped.isPresent() ? ContentSource.SCRAPED : ContentSource.DESCRIPTION;
+                String content = scraped.orElseGet(() -> {
+                    log.info("스크래핑 폴백: description 사용. title={}", title);
+                    return item.cleanDescription();
+                });
 
                 if (content.isBlank()) {
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
-                            AttemptStage.PREFILTER, AttemptReason.EMPTY_CONTENT, null, null);
+                            AttemptStage.PREFILTER, AttemptReason.EMPTY_CONTENT, null, null,
+                            contentSource);
                     continue;
                 }
 
@@ -368,7 +374,8 @@ public class QuizGenerationService {
                     log.info("기사 건너뜀. category={}, title={}, stage={}, reason={}",
                             category, title, outcome.stage(), outcome.reason());
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
-                            outcome.stage(), outcome.reason(), outcome.detail(), null);
+                            outcome.stage(), outcome.reason(), outcome.detail(), null,
+                            contentSource);
                     continue;
                 }
 
@@ -376,7 +383,8 @@ public class QuizGenerationService {
                 if (!isValidQuiz(dto)) {
                     log.warn("OpenAI 응답 유효성 검증 실패. title={}", title);
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
-                            AttemptStage.VALIDATE, AttemptReason.INVALID_RESPONSE, null, null);
+                            AttemptStage.VALIDATE, AttemptReason.INVALID_RESPONSE, null, null,
+                            contentSource);
                     continue;
                 }
 
@@ -398,7 +406,7 @@ public class QuizGenerationService {
                             category, term, dto.getQuestion());
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
                             AttemptStage.VALIDATE, AttemptReason.TERM_EQUALS_CATEGORY,
-                            "term=" + term, null);
+                            "term=" + term, null, contentSource);
                     continue;
                 }
 
@@ -411,7 +419,7 @@ public class QuizGenerationService {
                             TERM_GUARD_DAYS, category, term, dto.getQuestion());
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
                             AttemptStage.VALIDATE, AttemptReason.TERM_REUSE_GUARD,
-                            "term=" + term, null);
+                            "term=" + term, null, contentSource);
                     continue;
                 }
 
@@ -430,7 +438,8 @@ public class QuizGenerationService {
                     attemptRecorder.record(category.name(), runWindow, keyword, title, url,
                             AttemptStage.VALIDATE, AttemptReason.LEXICAL_DUPLICATE,
                             "jaccard=%.2f dice=%.2f".formatted(
-                                    match.tokenJaccard(), match.bigramDice()), null);
+                                    match.tokenJaccard(), match.bigramDice()), null,
+                            contentSource);
                     continue;
                 }
 
@@ -467,7 +476,7 @@ public class QuizGenerationService {
                 );
 
                 attemptRecorder.record(category.name(), runWindow, keyword, title, url,
-                        AttemptStage.PUBLISHED, null, null, saved.getId());
+                        AttemptStage.PUBLISHED, null, null, saved.getId(), contentSource);
 
                 // 사용된 URL 등록 (다른 카테고리에서 재사용 방지)
                 usedUrls.add(url);
