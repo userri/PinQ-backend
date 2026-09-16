@@ -65,6 +65,7 @@
 |---|---|---|
 | [superpowers/specs/2026-07-21-review-tree-visibility-design.md](superpowers/specs/2026-07-21-review-tree-visibility-design.md) | 복습 나무 브레인스토밍 결정사항 (설계 인계용) | ✅ 완료 |
 | [superpowers/plans/2026-07-21-review-tree-visibility.md](superpowers/plans/2026-07-21-review-tree-visibility.md) | 위 설계의 구현 계획서 (729줄) | ✅ 완료·배포됨 |
+| [data/quality-before-after.md](data/quality-before-after.md) | 7/7 품질 개선 전후를 같은 코드로 재측정한 비교표 + 쓸 수 있는/없는 문장. 도구 `scripts/quality-metrics.py` | 2026-09-17 측정 |
 
 ---
 
